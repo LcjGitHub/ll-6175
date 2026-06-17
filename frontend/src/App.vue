@@ -436,10 +436,13 @@ async function handleImport() {
       const result = await backupApi.import(importFile.value, importMode.value)
       const s = result.summary
       const modeText = result.mode === 'overwrite' ? '覆盖模式' : '合并模式'
+      const channelInfo = s.channels_updated > 0
+        ? `渠道：新增 ${s.channels_inserted} 个、更新 ${s.channels_updated} 个`
+        : `渠道：${s.channels_inserted} 个`
       toast.add({
         severity: 'success',
         summary: '导入成功',
-        detail: `${modeText}：游戏 ${s.games_inserted} 个，渠道 ${s.channels_inserted} 个，缺件 ${s.parts_inserted} 条（跳过 ${s.parts_skipped} 条）`,
+        detail: `${modeText}：游戏 ${s.games_inserted} 个，${channelInfo}，缺件 ${s.parts_inserted} 条（跳过 ${s.parts_skipped} 条）`,
         life: 4000,
       })
       importDialog.value = false
@@ -1004,13 +1007,23 @@ watch(activeTab, (val) => {
             style="display: none"
             @change="onFileSelected"
           />
-          <div class="file-select-area" @click="triggerFileSelect">
-            <i class="pi pi-file-import file-icon" />
-            <div v-if="importFile" class="file-selected">
-              <span class="file-name">{{ importFile.name }}</span>
-              <span class="file-size">{{ (importFile.size / 1024).toFixed(1) }} KB</span>
+          <div class="file-select-row">
+            <div class="file-select-area" @click="triggerFileSelect">
+              <i class="pi pi-file-import file-icon" />
+              <div v-if="importFile" class="file-selected">
+                <span class="file-name">{{ importFile.name }}</span>
+                <span class="file-size">{{ (importFile.size / 1024).toFixed(1) }} KB</span>
+              </div>
+              <div v-else class="file-hint">点击区域或右侧按钮选择文件</div>
             </div>
-            <div v-else class="file-hint">点击此处选择 JSON 备份文件</div>
+            <Button
+              icon="pi pi-folder-open"
+              label="选择文件"
+              outlined
+              size="small"
+              class="file-select-btn"
+              @click="triggerFileSelect"
+            />
           </div>
         </div>
         <div class="import-tips">
@@ -1063,7 +1076,12 @@ body {
 }
 
 .app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
 .app-header h1 {
@@ -1572,32 +1590,37 @@ body {
   align-items: center;
 }
 
-.app-header {
+/* 文件选择区域 */
+.file-select-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem;
+  align-items: stretch;
 }
 
-/* 文件选择区域 */
 .file-select-area {
   border: 2px dashed #cbd5e1;
   border-radius: 10px;
-  padding: 1.5rem 1rem;
+  padding: 1.25rem 1rem;
   text-align: center;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
+  flex: 1;
+  min-height: 80px;
 }
 
 .file-select-area:hover {
   border-color: #3b82f6;
   background: #f8fafc;
+}
+
+.file-select-btn {
+  flex-shrink: 0;
+  align-self: center;
 }
 
 .file-icon {

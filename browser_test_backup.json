@@ -1,0 +1,135 @@
+{
+  "version": "1.0",
+  "exported_at": "2026-06-17T17:29:54",
+  "summary": {
+    "games": 6,
+    "channels": 4,
+    "missing_parts": 8
+  },
+  "games": [
+    {
+      "id": 1,
+      "name": "卡坦岛"
+    },
+    {
+      "id": 2,
+      "name": "璀璨宝石"
+    },
+    {
+      "id": 3,
+      "name": "狼人杀"
+    },
+    {
+      "id": 5,
+      "name": "日志测试游戏"
+    },
+    {
+      "id": 7,
+      "name": "浏览器验证游戏"
+    },
+    {
+      "id": 8,
+      "name": "导入测试新游戏"
+    }
+  ],
+  "purchase_channels": [
+    {
+      "id": 1,
+      "name": "淘宝桌游配件专营店",
+      "contact": "客服旺旺：bg-parts，电话：400-123-4567",
+      "remark": "主要购买原装桌游配件"
+    },
+    {
+      "id": 2,
+      "name": "3D打印定制工作室",
+      "contact": "微信：3dprint_mini，QQ：123456789",
+      "remark": "定制特殊形状的塑料零件"
+    },
+    {
+      "id": 3,
+      "name": "拼多多通用耗材店",
+      "contact": "店铺ID：bg_supplies",
+      "remark": "购买卡牌套、骰子等通用配件"
+    },
+    {
+      "id": 4,
+      "name": "测试渠道",
+      "contact": "13800000000",
+      "remark": "浏览器测试用"
+    }
+  ],
+  "missing_parts": [
+    {
+      "id": 1,
+      "game_id": 1,
+      "channel_id": 1,
+      "accessory": "红色道路板块",
+      "replacement_plan": "淘宝补购原装配件",
+      "cost": 28.5,
+      "completion_date": "2025-03-12"
+    },
+    {
+      "id": 2,
+      "game_id": 1,
+      "channel_id": 2,
+      "accessory": "六面骰",
+      "replacement_plan": "3D 打印替代件",
+      "cost": 5.0,
+      "completion_date": null
+    },
+    {
+      "id": 3,
+      "game_id": 2,
+      "channel_id": 3,
+      "accessory": "绿色宝石代币",
+      "replacement_plan": "通用玻璃筹码替代",
+      "cost": 15.0,
+      "completion_date": "2025-01-20"
+    },
+    {
+      "id": 4,
+      "game_id": 2,
+      "channel_id": 3,
+      "accessory": "卡牌套",
+      "replacement_plan": "标准 57×89mm 牌套",
+      "cost": 32.0,
+      "completion_date": "2025-02-08"
+    },
+    {
+      "id": 5,
+      "game_id": 3,
+      "channel_id": null,
+      "accessory": "预言家角色牌",
+      "replacement_plan": "高清扫描重印",
+      "cost": 2.0,
+      "completion_date": "2024-11-05"
+    },
+    {
+      "id": 6,
+      "game_id": 3,
+      "channel_id": 2,
+      "accessory": "法官锤",
+      "replacement_plan": "木质迷你锤替代",
+      "cost": 18.0,
+      "completion_date": null
+    },
+    {
+      "id": 8,
+      "game_id": 7,
+      "channel_id": null,
+      "accessory": "验证配件改",
+      "replacement_plan": "网购升级版",
+      "cost": 19.9,
+      "completion_date": null
+    },
+    {
+      "id": 9,
+      "game_id": 8,
+      "channel_id": 1,
+      "accessory": "新游戏配件1",
+      "replacement_plan": "测试导入方案",
+      "cost": 9.9,
+      "completion_date": null
+    }
+  ]
+}

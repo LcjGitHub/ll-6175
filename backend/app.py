@@ -1,6 +1,7 @@
 """桌游缺件替换记录 API。"""
 
 import json
+import re
 from datetime import datetime
 from io import BytesIO
 
@@ -561,6 +562,27 @@ def export_backup():
     )
 
 
+_DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+_FIELD_LABELS = {
+    "game_id": "所属游戏编号",
+    "accessory": "配件名称",
+    "replacement_plan": "替换方案",
+    "cost": "成本",
+    "completion_date": "完成日期",
+    "name": "名称",
+    "contact": "联系方式",
+    "remark": "备注",
+    "channel_id": "采购渠道编号",
+}
+
+_SECTION_LABELS = {
+    "games": "游戏列表",
+    "purchase_channels": "采购渠道列表",
+    "missing_parts": "缺件记录列表",
+}
+
+
 def _validate_backup_structure(data: dict) -> list[str]:
     """校验备份数据结构，返回错误信息列表（空列表表示校验通过）。"""
     errors = []
@@ -572,43 +594,59 @@ def _validate_backup_structure(data: dict) -> list[str]:
         errors.append(f"备份版本不兼容：期望 {BACKUP_VERSION}，实际 {data.get('version')}")
 
     for key in ("games", "purchase_channels", "missing_parts"):
+        label = _SECTION_LABELS.get(key, key)
         if key not in data:
-            errors.append(f"缺少必填字段：{key}")
+            errors.append(f"缺少必填字段：{label}")
         elif not isinstance(data[key], list):
-            errors.append(f"字段 {key} 必须是数组")
+            errors.append(f"{label}必须是数组")
 
     if errors:
         return errors
 
     for idx, g in enumerate(data["games"]):
+        pos = f"游戏列表第 {idx + 1} 条"
         if not isinstance(g, dict):
-            errors.append(f"games[{idx}] 必须是对象")
+            errors.append(f"{pos}必须是对象")
             continue
         if "name" not in g or not isinstance(g["name"], str) or not g["name"].strip():
-            errors.append(f"games[{idx}] 缺少有效 name 字段")
+            errors.append(f"{pos}缺少有效的游戏名称")
 
     for idx, c in enumerate(data["purchase_channels"]):
+        pos = f"采购渠道列表第 {idx + 1} 条"
         if not isinstance(c, dict):
-            errors.append(f"purchase_channels[{idx}] 必须是对象")
+            errors.append(f"{pos}必须是对象")
             continue
         if "name" not in c or not isinstance(c["name"], str) or not c["name"].strip():
-            errors.append(f"purchase_channels[{idx}] 缺少有效 name 字段")
+            errors.append(f"{pos}缺少有效的渠道名称")
 
     for idx, p in enumerate(data["missing_parts"]):
+        pos = f"缺件记录列表第 {idx + 1} 条"
         if not isinstance(p, dict):
-            errors.append(f"missing_parts[{idx}] 必须是对象")
+            errors.append(f"{pos}必须是对象")
             continue
         for field in ("game_id", "accessory", "replacement_plan"):
+            label = _FIELD_LABELS.get(field, field)
             if field not in p:
-                errors.append(f"missing_parts[{idx}] 缺少必填字段 {field}")
+                errors.append(f"{pos}缺少必填字段「{label}」")
         if "accessory" in p and (not isinstance(p["accessory"], str) or not p["accessory"].strip()):
-            errors.append(f"missing_parts[{idx}] accessory 不能为空")
+            errors.append(f"{pos}配件名称不能为空")
         if "replacement_plan" in p and (
             not isinstance(p["replacement_plan"], str) or not p["replacement_plan"].strip()
         ):
-            errors.append(f"missing_parts[{idx}] replacement_plan 不能为空")
+            errors.append(f"{pos}替换方案不能为空")
         if "cost" in p and not isinstance(p["cost"], (int, float)):
-            errors.append(f"missing_parts[{idx}] cost 必须是数字")
+            errors.append(f"{pos}成本必须是数字")
+        if "completion_date" in p and p["completion_date"] is not None:
+            val = p["completion_date"]
+            if not isinstance(val, str):
+                errors.append(f"{pos}完成日期必须是字符串")
+            elif not _DATE_PATTERN.match(val):
+                errors.append(f"{pos}完成日期格式不合法，应为 YYYY-MM-DD")
+            else:
+                try:
+                    datetime.strptime(val, "%Y-%m-%d")
+                except ValueError:
+                    errors.append(f"{pos}完成日期不是有效的日期（{val}）")
 
     return errors
 
@@ -656,6 +694,7 @@ def import_backup():
                 conn.execute("DELETE FROM missing_parts")
                 conn.execute("DELETE FROM games")
                 conn.execute("DELETE FROM purchase_channels")
+                conn.execute("DELETE FROM operation_logs")
 
             inserted_games = 0
             inserted_channels = 0
@@ -675,6 +714,7 @@ def import_backup():
                 inserted_games += 1
 
             # 导入采购渠道
+            updated_channels = 0
             for c in src_channels:
                 name = c["name"].strip()
                 contact = (c.get("contact") or "").strip() or None
@@ -685,6 +725,11 @@ def import_backup():
                     ).fetchone()
                     if existing:
                         old_channel_id_to_new[c.get("id")] = existing["id"]
+                        conn.execute(
+                            "UPDATE purchase_channels SET contact = ?, remark = ? WHERE id = ?",
+                            (contact, remark, existing["id"]),
+                        )
+                        updated_channels += 1
                         continue
                 cur = conn.execute(
                     "INSERT INTO purchase_channels (name, contact, remark) VALUES (?, ?, ?)",
@@ -736,6 +781,7 @@ def import_backup():
             result_summary = {
                 "games_inserted": inserted_games,
                 "channels_inserted": inserted_channels,
+                "channels_updated": updated_channels,
                 "parts_inserted": inserted_parts,
                 "parts_skipped": skipped_parts,
             }
@@ -746,7 +792,7 @@ def import_backup():
                 f"{'覆盖模式' if mode == 'overwrite' else '合并模式'}导入",
                 (
                     f"游戏：{result_summary['games_inserted']} 个，"
-                    f"渠道：{result_summary['channels_inserted']} 个，"
+                    f"渠道：新增 {result_summary['channels_inserted']} 个、更新 {result_summary['channels_updated']} 个，"
                     f"缺件：{result_summary['parts_inserted']} 条（跳过 {skipped_parts} 条）"
                 ),
             )
