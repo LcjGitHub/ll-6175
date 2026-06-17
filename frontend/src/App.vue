@@ -18,7 +18,7 @@ import TabView from 'primevue/tabview'
 import TabPanel from 'primevue/tabpanel'
 import Textarea from 'primevue/textarea'
 
-import { gameApi, partApi, statsApi, channelApi } from './api'
+import { gameApi, partApi, statsApi, channelApi, logApi } from './api'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -57,6 +57,22 @@ const channelForm = ref({
 })
 
 const activeTab = ref(0)
+
+const logs = ref([])
+const loadingLogs = ref(false)
+const logFilter = ref('')
+const logFilterOptions = [
+  { label: '全部', value: '' },
+  { label: '新增游戏', value: '新增游戏' },
+  { label: '修改游戏', value: '修改游戏' },
+  { label: '删除游戏', value: '删除游戏' },
+  { label: '新增缺件', value: '新增缺件' },
+  { label: '修改缺件', value: '修改缺件' },
+  { label: '删除缺件', value: '删除缺件' },
+  { label: '新增渠道', value: '新增渠道' },
+  { label: '修改渠道', value: '修改渠道' },
+  { label: '删除渠道', value: '删除渠道' },
+]
 
 /** @param {unknown} err */
 function showError(err, fallback = '操作失败') {
@@ -159,6 +175,7 @@ async function saveGame() {
     gameDialog.value = false
     await loadGames()
     await loadStats()
+    await loadLogs()
   } catch (err) {
     showError(err)
   }
@@ -180,6 +197,7 @@ function confirmDeleteGame(game) {
         toast.add({ severity: 'success', summary: '成功', detail: '游戏已删除', life: 2000 })
         await loadGames()
         await loadStats()
+        await loadLogs()
       } catch (err) {
         showError(err)
       }
@@ -196,6 +214,24 @@ async function loadChannels() {
   } finally {
     loadingChannels.value = false
   }
+}
+
+async function loadLogs() {
+  loadingLogs.value = true
+  try {
+    logs.value = await logApi.list(logFilter.value || undefined)
+  } catch (err) {
+    showError(err, '加载操作日志失败')
+  } finally {
+    loadingLogs.value = false
+  }
+}
+
+function getOpTypeSeverity(opType) {
+  if (opType.startsWith('新增')) return 'success'
+  if (opType.startsWith('修改')) return 'info'
+  if (opType.startsWith('删除')) return 'danger'
+  return 'secondary'
 }
 
 function openChannelDialog(channel = null) {
@@ -236,6 +272,7 @@ async function saveChannel() {
     }
     channelDialog.value = false
     await loadChannels()
+    await loadLogs()
   } catch (err) {
     showError(err)
   }
@@ -252,6 +289,7 @@ function confirmDeleteChannel(channel) {
         await channelApi.remove(channel.id)
         toast.add({ severity: 'success', summary: '成功', detail: '渠道已删除', life: 2000 })
         await loadChannels()
+        await loadLogs()
         if (selectedGame.value) {
           await loadParts()
         }
@@ -320,6 +358,7 @@ async function savePart() {
     await loadParts()
     await loadGames()
     await loadStats()
+    await loadLogs()
   } catch (err) {
     showError(err)
   }
@@ -338,6 +377,7 @@ function confirmDeletePart(part) {
         await loadParts()
         await loadGames()
         await loadStats()
+        await loadLogs()
       } catch (err) {
         showError(err)
       }
@@ -349,6 +389,7 @@ onMounted(() => {
   loadGames()
   loadStats()
   loadChannels()
+  loadLogs()
 })
 </script>
 
@@ -651,6 +692,56 @@ onMounted(() => {
             </Column>
           </DataTable>
           <div v-else class="empty-hint">暂无采购渠道，点击「新增渠道」添加</div>
+        </div>
+      </TabPanel>
+
+      <TabPanel header="操作历史">
+        <div class="log-panel">
+          <div class="panel-header">
+            <h2>操作历史记录</h2>
+            <div class="log-filter">
+              <Dropdown
+                v-model="logFilter"
+                :options="logFilterOptions"
+                option-label="label"
+                option-value="value"
+                placeholder="筛选操作类型"
+                show-clear
+                class="log-filter-dropdown"
+                @change="loadLogs"
+              />
+              <Button
+                icon="pi pi-refresh"
+                label="刷新"
+                size="small"
+                outlined
+                @click="loadLogs"
+              />
+            </div>
+          </div>
+
+          <div v-if="loadingLogs" class="empty-hint">加载中…</div>
+          <div v-else-if="logs.length" class="log-list">
+            <div v-for="log in logs" :key="log.id" class="log-item">
+              <div class="log-icon" :class="getOpTypeSeverity(log.op_type)">
+                <i
+                  :class="[
+                    'pi',
+                    log.op_type.startsWith('新增') ? 'pi-plus' : log.op_type.startsWith('修改') ? 'pi-pencil' : 'pi-trash'
+                  ]"
+                />
+              </div>
+              <div class="log-content">
+                <div class="log-main">
+                  <Tag :value="log.op_type" :severity="getOpTypeSeverity(log.op_type)" />
+                  <span class="log-target">{{ log.target }}</span>
+                  <span v-if="log.detail" class="log-detail">{{ log.detail }}</span>
+                </div>
+                <div class="log-time">{{ log.created_at }}</div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-hint">暂无操作记录</div>
         </div>
       </TabPanel>
     </TabView>
@@ -1203,6 +1294,100 @@ body {
 }
 
 .text-muted {
+  color: #94a3b8;
+}
+
+.log-panel {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 1rem;
+  min-height: 420px;
+}
+
+.log-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.log-filter-dropdown {
+  min-width: 180px;
+}
+
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.log-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #f1f5f9;
+  transition: background 0.15s;
+}
+
+.log-item:hover {
+  background: #f8fafc;
+}
+
+.log-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+}
+
+.log-icon.success {
+  background: #ecfdf5;
+  color: #10b981;
+}
+
+.log-icon.info {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.log-icon.danger {
+  background: #fef2f2;
+  color: #ef4444;
+}
+
+.log-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.log-main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.log-target {
+  font-weight: 500;
+  color: #1a1a2e;
+}
+
+.log-detail {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.log-time {
+  font-size: 0.8rem;
   color: #94a3b8;
 }
 </style>

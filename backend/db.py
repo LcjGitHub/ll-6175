@@ -43,6 +43,14 @@ def init_db() -> None:
                 FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
                 FOREIGN KEY (channel_id) REFERENCES purchase_channels(id) ON DELETE SET NULL
             );
+
+            CREATE TABLE IF NOT EXISTS operation_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                op_type TEXT NOT NULL,
+                target TEXT NOT NULL,
+                detail TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            );
             """
         )
 

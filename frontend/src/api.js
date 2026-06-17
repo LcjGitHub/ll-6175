@@ -98,4 +98,21 @@ export const statsApi = {
   summary: () => api.get('/stats/summary').then((r) => r.data),
 }
 
+/**
+ * @typedef {Object} OperationLog
+ * @property {number} id
+ * @property {string} op_type
+ * @property {string} target
+ * @property {string|null} detail
+ * @property {string} created_at
+ */
+
+export const logApi = {
+  /** @param {string} [opType] @returns {Promise<OperationLog[]>} */
+  list: (opType) => {
+    const params = opType ? { op_type: opType } : {}
+    return api.get('/logs', { params }).then((r) => r.data)
+  },
+}
+
 export default api

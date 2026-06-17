@@ -16,6 +16,14 @@ def row_to_dict(row):
     return dict(row) if row else None
 
 
+def write_log(conn, op_type, target, detail=None):
+    """写入一条操作日志。"""
+    conn.execute(
+        "INSERT INTO operation_logs (op_type, target, detail) VALUES (?, ?, ?)",
+        (op_type, target, detail),
+    )
+
+
 # ── 游戏 ──────────────────────────────────────────────
 
 
@@ -47,6 +55,7 @@ def create_game():
     try:
         with get_connection() as conn:
             cur = conn.execute("INSERT INTO games (name) VALUES (?)", (name,))
+            write_log(conn, "新增游戏", name)
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM games WHERE id = ?", (cur.lastrowid,)
@@ -67,11 +76,18 @@ def update_game(game_id: int):
 
     try:
         with get_connection() as conn:
+            old = conn.execute(
+                "SELECT name FROM games WHERE id = ?", (game_id,)
+            ).fetchone()
+            if not old:
+                return jsonify({"error": "游戏不存在"}), 404
+            old_name = old["name"]
             result = conn.execute(
                 "UPDATE games SET name = ? WHERE id = ?", (name, game_id)
             )
             if result.rowcount == 0:
                 return jsonify({"error": "游戏不存在"}), 404
+            write_log(conn, "修改游戏", name, f"{old_name} → {name}")
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM games WHERE id = ?", (game_id,)
@@ -86,9 +102,13 @@ def update_game(game_id: int):
 def delete_game(game_id: int):
     """删除桌游及其全部缺件记录。"""
     with get_connection() as conn:
-        result = conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
-        if result.rowcount == 0:
+        game = conn.execute(
+            "SELECT name FROM games WHERE id = ?", (game_id,)
+        ).fetchone()
+        if not game:
             return jsonify({"error": "游戏不存在"}), 404
+        write_log(conn, "删除游戏", game["name"])
+        conn.execute("DELETE FROM games WHERE id = ?", (game_id,))
         conn.commit()
     return "", 204
 
@@ -130,6 +150,7 @@ def create_channel():
                 "INSERT INTO purchase_channels (name, contact, remark) VALUES (?, ?, ?)",
                 (name, contact, remark),
             )
+            write_log(conn, "新增渠道", name)
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM purchase_channels WHERE id = ?", (cur.lastrowid,)
@@ -153,12 +174,19 @@ def update_channel(channel_id: int):
 
     try:
         with get_connection() as conn:
+            old = conn.execute(
+                "SELECT name FROM purchase_channels WHERE id = ?", (channel_id,)
+            ).fetchone()
+            if not old:
+                return jsonify({"error": "渠道不存在"}), 404
+            old_name = old["name"]
             result = conn.execute(
                 "UPDATE purchase_channels SET name = ?, contact = ?, remark = ? WHERE id = ?",
                 (name, contact, remark, channel_id),
             )
             if result.rowcount == 0:
                 return jsonify({"error": "渠道不存在"}), 404
+            write_log(conn, "修改渠道", name, f"{old_name} → {name}")
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM purchase_channels WHERE id = ?", (channel_id,)
@@ -173,11 +201,15 @@ def update_channel(channel_id: int):
 def delete_channel(channel_id: int):
     """删除采购渠道（关联的缺件记录会保留但渠道置空）。"""
     with get_connection() as conn:
-        result = conn.execute(
+        channel = conn.execute(
+            "SELECT name FROM purchase_channels WHERE id = ?", (channel_id,)
+        ).fetchone()
+        if not channel:
+            return jsonify({"error": "渠道不存在"}), 404
+        write_log(conn, "删除渠道", channel["name"])
+        conn.execute(
             "DELETE FROM purchase_channels WHERE id = ?", (channel_id,)
         )
-        if result.rowcount == 0:
-            return jsonify({"error": "渠道不存在"}), 404
         conn.commit()
     return "", 204
 
@@ -302,6 +334,7 @@ def create_part(game_id: int):
             """,
             (game_id, accessory, replacement_plan, cost, completion_date, channel_id),
         )
+        write_log(conn, "新增缺件", accessory, f"游戏ID={game_id}")
         conn.commit()
         row = conn.execute(
             """
@@ -363,6 +396,7 @@ def update_part(part_id: int):
         )
         if result.rowcount == 0:
             return jsonify({"error": "缺件记录不存在"}), 404
+        write_log(conn, "修改缺件", accessory)
         conn.commit()
         row = conn.execute(
             """
@@ -382,13 +416,46 @@ def update_part(part_id: int):
 def delete_part(part_id: int):
     """删除缺件记录。"""
     with get_connection() as conn:
-        result = conn.execute(
+        part = conn.execute(
+            "SELECT accessory FROM missing_parts WHERE id = ?", (part_id,)
+        ).fetchone()
+        if not part:
+            return jsonify({"error": "缺件记录不存在"}), 404
+        write_log(conn, "删除缺件", part["accessory"])
+        conn.execute(
             "DELETE FROM missing_parts WHERE id = ?", (part_id,)
         )
-        if result.rowcount == 0:
-            return jsonify({"error": "缺件记录不存在"}), 404
         conn.commit()
     return "", 204
+
+
+# ── 操作日志 ──────────────────────────────────────────
+
+
+@app.get("/api/logs")
+def list_logs():
+    """获取最近 50 条操作日志，支持按 op_type 筛选。"""
+    op_type = request.args.get("op_type", "").strip()
+    with get_connection() as conn:
+        if op_type:
+            rows = conn.execute(
+                """
+                SELECT * FROM operation_logs
+                WHERE op_type = ?
+                ORDER BY id DESC
+                LIMIT 50
+                """,
+                (op_type,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT * FROM operation_logs
+                ORDER BY id DESC
+                LIMIT 50
+                """
+            ).fetchall()
+    return jsonify([row_to_dict(r) for r in rows])
 
 
 if __name__ == "__main__":
