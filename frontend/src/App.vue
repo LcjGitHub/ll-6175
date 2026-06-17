@@ -365,7 +365,7 @@ onMounted(() => {
     </header>
 
     <!-- 费用统计看板 -->
-    <section class="stats-dashboard">
+    <section v-if="activeTab === 0" class="stats-dashboard">
       <div class="stats-header">
         <h2>费用统计看板</h2>
       </div>
@@ -693,7 +693,6 @@ onMounted(() => {
             option-label="name"
             option-value="id"
             placeholder="请选择渠道（可选）"
-            editable
             show-clear
             class="w-full"
           />

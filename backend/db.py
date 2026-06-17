@@ -48,9 +48,15 @@ def init_db() -> None:
 
         _migrate_missing_parts(conn)
 
-        count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
-        if count == 0:
+        game_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+        if game_count == 0:
             _seed(conn)
+        else:
+            channel_count = conn.execute(
+                "SELECT COUNT(*) FROM purchase_channels"
+            ).fetchone()[0]
+            if channel_count == 0:
+                _seed_channels_and_link_parts(conn)
 
 
 def _migrate_missing_parts(conn: sqlite3.Connection) -> None:
@@ -111,5 +117,49 @@ def _seed(conn: sqlite3.Connection) -> None:
             """,
             [(game_id, *p) for p in game_parts],
         )
+
+    conn.commit()
+
+
+def _seed_channels_and_link_parts(conn: sqlite3.Connection) -> None:
+    """当游戏表有数据但渠道表为空时，补充示例渠道并为缺件记录关联合适渠道。"""
+    channels = [
+        ("淘宝桌游配件专营店", "客服旺旺：bg-parts，电话：400-123-4567", "主要购买原装桌游配件"),
+        ("3D打印定制工作室", "微信：3dprint_mini，QQ：123456789", "定制特殊形状的塑料零件"),
+        ("拼多多通用耗材店", "店铺ID：bg_supplies", "购买卡牌套、骰子等通用配件"),
+    ]
+    channel_ids = []
+    for name, contact, remark in channels:
+        cur = conn.execute(
+            "INSERT INTO purchase_channels (name, contact, remark) VALUES (?, ?, ?)",
+            (name, contact, remark),
+        )
+        channel_ids.append(cur.lastrowid)
+
+    taobao_id, print3d_id, pdd_id = channel_ids
+
+    parts = conn.execute(
+        "SELECT id, accessory, replacement_plan FROM missing_parts WHERE channel_id IS NULL ORDER BY id"
+    ).fetchall()
+
+    for part in parts:
+        accessory = part["accessory"].lower()
+        plan = part["replacement_plan"].lower()
+
+        channel_id = None
+        if "3d" in plan or "打印" in plan or "定制" in plan:
+            channel_id = print3d_id
+        elif "牌套" in accessory or "卡牌套" in accessory or "筹码" in accessory or "代币" in accessory:
+            channel_id = pdd_id
+        elif "淘宝" in plan or "原装" in plan or "配件" in plan:
+            channel_id = taobao_id
+        elif "骰" in accessory or "骰子" in accessory:
+            channel_id = pdd_id
+
+        if channel_id is not None:
+            conn.execute(
+                "UPDATE missing_parts SET channel_id = ? WHERE id = ?",
+                (channel_id, part["id"]),
+            )
 
     conn.commit()
