@@ -115,4 +115,54 @@ export const logApi = {
   },
 }
 
+/**
+ * @typedef {Object} ImportSummary
+ * @property {number} games_inserted
+ * @property {number} channels_inserted
+ * @property {number} parts_inserted
+ * @property {number} parts_skipped
+ */
+
+/**
+ * @typedef {Object} ImportResult
+ * @property {string} message
+ * @property {'overwrite'|'merge'} mode
+ * @property {ImportSummary} summary
+ */
+
+export const backupApi = {
+  /** 触发浏览器下载备份 JSON 文件 */
+  export: async () => {
+    const resp = await api.get('/backup/export', { responseType: 'blob' })
+    const blob = resp.data
+    const disposition = resp.headers['content-disposition'] || ''
+    const match = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
+    const filename = match ? match[1].replace(/['"]/g, '') : 'boardgame_backup.json'
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+  },
+
+  /**
+   * 上传并导入备份文件
+   * @param {File} file
+   * @param {'overwrite'|'merge'} mode
+   * @returns {Promise<ImportResult>}
+   */
+  import: (file, mode = 'merge') => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api
+      .post(`/backup/import?mode=${mode}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data)
+  },
+}
+
 export default api

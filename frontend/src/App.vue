@@ -18,7 +18,7 @@ import TabView from 'primevue/tabview'
 import TabPanel from 'primevue/tabpanel'
 import Textarea from 'primevue/textarea'
 
-import { gameApi, partApi, statsApi, channelApi, logApi } from './api'
+import { gameApi, partApi, statsApi, channelApi, logApi, backupApi } from './api'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -69,7 +69,15 @@ const logFilterOptions = [
   { label: '新增缺件', value: '新增缺件' },
   { label: '修改缺件', value: '修改缺件' },
   { label: '删除缺件', value: '删除缺件' },
+  { label: '数据备份', value: '数据备份' },
+  { label: '数据恢复', value: '数据恢复' },
 ]
+
+const importDialog = ref(false)
+const importFile = ref(null)
+const importMode = ref('merge')
+const importing = ref(false)
+const fileInput = ref(null)
 
 /** @param {unknown} err */
 function showError(err, fallback = '操作失败') {
@@ -382,6 +390,92 @@ function confirmDeletePart(part) {
   })
 }
 
+async function loadAll() {
+  await Promise.all([loadGames(), loadStats(), loadChannels(), loadLogs()])
+}
+
+async function handleExport() {
+  try {
+    await backupApi.export()
+    toast.add({ severity: 'success', summary: '成功', detail: '数据已导出', life: 2000 })
+    await loadLogs()
+  } catch (err) {
+    showError(err, '导出失败')
+  }
+}
+
+function openImportDialog() {
+  importFile.value = null
+  importMode.value = 'merge'
+  importDialog.value = true
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
+}
+
+function onFileSelected(e) {
+  const files = e.target?.files
+  if (files && files.length > 0) {
+    importFile.value = files[0]
+  }
+}
+
+function triggerFileSelect() {
+  fileInput.value?.click()
+}
+
+async function handleImport() {
+  if (!importFile.value) {
+    toast.add({ severity: 'warn', summary: '提示', detail: '请选择备份文件', life: 3000 })
+    return
+  }
+
+  const doImport = async () => {
+    importing.value = true
+    try {
+      const result = await backupApi.import(importFile.value, importMode.value)
+      const s = result.summary
+      const modeText = result.mode === 'overwrite' ? '覆盖模式' : '合并模式'
+      toast.add({
+        severity: 'success',
+        summary: '导入成功',
+        detail: `${modeText}：游戏 ${s.games_inserted} 个，渠道 ${s.channels_inserted} 个，缺件 ${s.parts_inserted} 条（跳过 ${s.parts_skipped} 条）`,
+        life: 4000,
+      })
+      importDialog.value = false
+      selectedGame.value = null
+      parts.value = []
+      await loadAll()
+    } catch (err) {
+      const detail = err?.response?.data?.details
+      if (detail && Array.isArray(detail) && detail.length) {
+        toast.add({
+          severity: 'error',
+          summary: err?.response?.data?.error || '格式校验失败',
+          detail: detail.slice(0, 3).join('；'),
+          life: 5000,
+        })
+      } else {
+        showError(err, '导入失败')
+      }
+    } finally {
+      importing.value = false
+    }
+  }
+
+  if (importMode.value === 'overwrite') {
+    confirm.require({
+      message: '覆盖模式将清空现有全部数据后再导入，确定继续？',
+      header: '确认覆盖导入',
+      icon: 'pi pi-exclamation-triangle',
+      acceptClass: 'p-button-danger',
+      accept: doImport,
+    })
+  } else {
+    await doImport()
+  }
+}
+
 onMounted(() => {
   loadGames()
   loadStats()
@@ -405,6 +499,22 @@ watch(activeTab, (val) => {
       <div>
         <h1>桌游缺件替换记录</h1>
         <p class="subtitle">管理桌游配件缺失与替换方案</p>
+      </div>
+      <div class="header-actions">
+        <Button
+          icon="pi pi-download"
+          label="导出备份"
+          outlined
+          size="small"
+          @click="handleExport"
+        />
+        <Button
+          icon="pi pi-upload"
+          label="导入恢复"
+          outlined
+          size="small"
+          @click="openImportDialog"
+        />
       </div>
     </header>
 
@@ -860,6 +970,67 @@ watch(activeTab, (val) => {
       <template #footer>
         <Button label="取消" text @click="channelDialog = false" />
         <Button label="保存" @click="saveChannel" />
+      </template>
+    </Dialog>
+
+    <!-- 导入对话框 -->
+    <Dialog
+      v-model:visible="importDialog"
+      header="导入备份数据"
+      modal
+      :style="{ width: '30rem' }"
+      @hide="importing = false"
+    >
+      <div class="form-stack">
+        <div class="form-field">
+          <label>导入模式</label>
+          <Dropdown
+            v-model="importMode"
+            :options="[
+              { label: '合并模式（按名称去重，不覆盖现有数据）', value: 'merge' },
+              { label: '覆盖模式（清空全部现有数据后导入）', value: 'overwrite' },
+            ]"
+            option-label="label"
+            option-value="value"
+            class="w-full"
+          />
+        </div>
+        <div class="form-field">
+          <label>备份文件</label>
+          <input
+            ref="fileInput"
+            type="file"
+            accept=".json,application/json"
+            style="display: none"
+            @change="onFileSelected"
+          />
+          <div class="file-select-area" @click="triggerFileSelect">
+            <i class="pi pi-file-import file-icon" />
+            <div v-if="importFile" class="file-selected">
+              <span class="file-name">{{ importFile.name }}</span>
+              <span class="file-size">{{ (importFile.size / 1024).toFixed(1) }} KB</span>
+            </div>
+            <div v-else class="file-hint">点击此处选择 JSON 备份文件</div>
+          </div>
+        </div>
+        <div class="import-tips">
+          <div class="tip-title"><i class="pi pi-info-circle" /> 使用说明</div>
+          <ul>
+            <li>合并模式：仅导入名称不重复的游戏和渠道，缺件按（游戏+配件+方案）去重</li>
+            <li>覆盖模式：先清空全部数据，再完整导入备份内容（操作前请谨慎）</li>
+            <li>导入完成后将自动刷新页面各列表</li>
+          </ul>
+        </div>
+      </div>
+      <template #footer>
+        <Button label="取消" text @click="importDialog = false" :disabled="importing" />
+        <Button
+          label="开始导入"
+          :loading="importing"
+          :disabled="!importFile"
+          :class="importMode === 'overwrite' ? 'p-button-danger' : ''"
+          @click="handleImport"
+        />
       </template>
     </Dialog>
   </div>
@@ -1392,5 +1563,99 @@ body {
 .log-time {
   font-size: 0.8rem;
   color: #94a3b8;
+}
+
+/* 头部操作按钮 */
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* 文件选择区域 */
+.file-select-area {
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.file-select-area:hover {
+  border-color: #3b82f6;
+  background: #f8fafc;
+}
+
+.file-icon {
+  font-size: 1.75rem;
+  color: #64748b;
+}
+
+.file-hint {
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.file-selected {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.file-name {
+  font-weight: 500;
+  color: #1a1a2e;
+}
+
+.file-size {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+/* 导入提示 */
+.import-tips {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.875rem 1rem;
+}
+
+.tip-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.5rem;
+}
+
+.import-tips ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.import-tips li {
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.5;
 }
 </style>

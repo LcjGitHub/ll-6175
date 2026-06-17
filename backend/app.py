@@ -1,6 +1,10 @@
 """桌游缺件替换记录 API。"""
 
-from flask import Flask, jsonify, request
+import json
+from datetime import datetime
+from io import BytesIO
+
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 
 from db import get_connection, init_db
@@ -492,6 +496,272 @@ def list_logs():
                 """
             ).fetchall()
     return jsonify([row_to_dict(r) for r in rows])
+
+
+# ── 数据备份与恢复 ─────────────────────────────────────
+
+BACKUP_VERSION = "1.0"
+
+
+@app.get("/api/backup/export")
+def export_backup():
+    """导出全部游戏、采购渠道和缺件数据为结构化 JSON 文件。"""
+    with get_connection() as conn:
+        games = [row_to_dict(r) for r in conn.execute("SELECT id, name FROM games ORDER BY id").fetchall()]
+        channels = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, contact, remark FROM purchase_channels ORDER BY id"
+            ).fetchall()
+        ]
+        parts = [
+            row_to_dict(r)
+            for r in conn.execute(
+                """
+                SELECT id, game_id, channel_id, accessory, replacement_plan,
+                       cost, completion_date
+                FROM missing_parts
+                ORDER BY id
+                """
+            ).fetchall()
+        ]
+
+    backup_data = {
+        "version": BACKUP_VERSION,
+        "exported_at": datetime.now().isoformat(timespec="seconds"),
+        "summary": {
+            "games": len(games),
+            "channels": len(channels),
+            "missing_parts": len(parts),
+        },
+        "games": games,
+        "purchase_channels": channels,
+        "missing_parts": parts,
+    }
+
+    filename = f"boardgame_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    json_bytes = json.dumps(backup_data, ensure_ascii=False, indent=2).encode("utf-8")
+    buf = BytesIO(json_bytes)
+    buf.seek(0)
+
+    with get_connection() as conn:
+        write_log(
+            conn,
+            "数据备份",
+            "导出数据",
+            f"游戏：{len(games)} 个，渠道：{len(channels)} 个，缺件：{len(parts)} 条",
+        )
+        conn.commit()
+
+    return send_file(
+        buf,
+        mimetype="application/json",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+def _validate_backup_structure(data: dict) -> list[str]:
+    """校验备份数据结构，返回错误信息列表（空列表表示校验通过）。"""
+    errors = []
+
+    if not isinstance(data, dict):
+        return ["备份文件格式无效：根节点必须是对象"]
+
+    if data.get("version") != BACKUP_VERSION:
+        errors.append(f"备份版本不兼容：期望 {BACKUP_VERSION}，实际 {data.get('version')}")
+
+    for key in ("games", "purchase_channels", "missing_parts"):
+        if key not in data:
+            errors.append(f"缺少必填字段：{key}")
+        elif not isinstance(data[key], list):
+            errors.append(f"字段 {key} 必须是数组")
+
+    if errors:
+        return errors
+
+    for idx, g in enumerate(data["games"]):
+        if not isinstance(g, dict):
+            errors.append(f"games[{idx}] 必须是对象")
+            continue
+        if "name" not in g or not isinstance(g["name"], str) or not g["name"].strip():
+            errors.append(f"games[{idx}] 缺少有效 name 字段")
+
+    for idx, c in enumerate(data["purchase_channels"]):
+        if not isinstance(c, dict):
+            errors.append(f"purchase_channels[{idx}] 必须是对象")
+            continue
+        if "name" not in c or not isinstance(c["name"], str) or not c["name"].strip():
+            errors.append(f"purchase_channels[{idx}] 缺少有效 name 字段")
+
+    for idx, p in enumerate(data["missing_parts"]):
+        if not isinstance(p, dict):
+            errors.append(f"missing_parts[{idx}] 必须是对象")
+            continue
+        for field in ("game_id", "accessory", "replacement_plan"):
+            if field not in p:
+                errors.append(f"missing_parts[{idx}] 缺少必填字段 {field}")
+        if "accessory" in p and (not isinstance(p["accessory"], str) or not p["accessory"].strip()):
+            errors.append(f"missing_parts[{idx}] accessory 不能为空")
+        if "replacement_plan" in p and (
+            not isinstance(p["replacement_plan"], str) or not p["replacement_plan"].strip()
+        ):
+            errors.append(f"missing_parts[{idx}] replacement_plan 不能为空")
+        if "cost" in p and not isinstance(p["cost"], (int, float)):
+            errors.append(f"missing_parts[{idx}] cost 必须是数字")
+
+    return errors
+
+
+@app.post("/api/backup/import")
+def import_backup():
+    """
+    从备份文件批量导入数据。
+    参数 mode: overwrite（覆盖，清空现有数据后导入）| merge（合并，按名称去重）
+    """
+    mode = request.args.get("mode", "merge").strip().lower()
+    if mode not in ("overwrite", "merge"):
+        return jsonify({"error": "mode 参数必须是 overwrite 或 merge"}), 400
+
+    if "file" not in request.files:
+        return jsonify({"error": "未找到上传的文件"}), 400
+
+    file = request.files["file"]
+    if not file or file.filename == "":
+        return jsonify({"error": "文件名为空"}), 400
+
+    try:
+        raw = file.read()
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        data = json.loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+        return jsonify({"error": f"文件解析失败：{e}"}), 400
+
+    errors = _validate_backup_structure(data)
+    if errors:
+        return jsonify({"error": "数据格式校验未通过", "details": errors}), 400
+
+    src_games = data["games"]
+    src_channels = data["purchase_channels"]
+    src_parts = data["missing_parts"]
+
+    # 构建 game_id 的映射：原始备份中的 id -> 新建或找到的 id
+    old_game_id_to_new = {}
+    old_channel_id_to_new = {}
+
+    try:
+        with get_connection() as conn:
+            if mode == "overwrite":
+                conn.execute("DELETE FROM missing_parts")
+                conn.execute("DELETE FROM games")
+                conn.execute("DELETE FROM purchase_channels")
+
+            inserted_games = 0
+            inserted_channels = 0
+
+            # 导入游戏
+            for g in src_games:
+                name = g["name"].strip()
+                if mode == "merge":
+                    existing = conn.execute(
+                        "SELECT id FROM games WHERE name = ?", (name,)
+                    ).fetchone()
+                    if existing:
+                        old_game_id_to_new[g.get("id")] = existing["id"]
+                        continue
+                cur = conn.execute("INSERT INTO games (name) VALUES (?)", (name,))
+                old_game_id_to_new[g.get("id")] = cur.lastrowid
+                inserted_games += 1
+
+            # 导入采购渠道
+            for c in src_channels:
+                name = c["name"].strip()
+                contact = (c.get("contact") or "").strip() or None
+                remark = (c.get("remark") or "").strip() or None
+                if mode == "merge":
+                    existing = conn.execute(
+                        "SELECT id FROM purchase_channels WHERE name = ?", (name,)
+                    ).fetchone()
+                    if existing:
+                        old_channel_id_to_new[c.get("id")] = existing["id"]
+                        continue
+                cur = conn.execute(
+                    "INSERT INTO purchase_channels (name, contact, remark) VALUES (?, ?, ?)",
+                    (name, contact, remark),
+                )
+                old_channel_id_to_new[c.get("id")] = cur.lastrowid
+                inserted_channels += 1
+
+            # 导入缺件记录
+            inserted_parts = 0
+            skipped_parts = 0
+            for p in src_parts:
+                old_game_id = p.get("game_id")
+                new_game_id = old_game_id_to_new.get(old_game_id)
+                if not new_game_id:
+                    skipped_parts += 1
+                    continue
+
+                accessory = p["accessory"].strip()
+                replacement_plan = p["replacement_plan"].strip()
+                cost = float(p.get("cost", 0) or 0)
+                completion_date = p.get("completion_date") or None
+
+                old_channel_id = p.get("channel_id")
+                new_channel_id = old_channel_id_to_new.get(old_channel_id) if old_channel_id is not None else None
+
+                if mode == "merge":
+                    existing = conn.execute(
+                        """
+                        SELECT id FROM missing_parts
+                        WHERE game_id = ? AND accessory = ? AND replacement_plan = ?
+                        """,
+                        (new_game_id, accessory, replacement_plan),
+                    ).fetchone()
+                    if existing:
+                        skipped_parts += 1
+                        continue
+
+                conn.execute(
+                    """
+                    INSERT INTO missing_parts
+                        (game_id, channel_id, accessory, replacement_plan, cost, completion_date)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (new_game_id, new_channel_id, accessory, replacement_plan, cost, completion_date),
+                )
+                inserted_parts += 1
+
+            result_summary = {
+                "games_inserted": inserted_games,
+                "channels_inserted": inserted_channels,
+                "parts_inserted": inserted_parts,
+                "parts_skipped": skipped_parts,
+            }
+
+            write_log(
+                conn,
+                "数据恢复",
+                f"{'覆盖模式' if mode == 'overwrite' else '合并模式'}导入",
+                (
+                    f"游戏：{result_summary['games_inserted']} 个，"
+                    f"渠道：{result_summary['channels_inserted']} 个，"
+                    f"缺件：{result_summary['parts_inserted']} 条（跳过 {skipped_parts} 条）"
+                ),
+            )
+            conn.commit()
+
+        return jsonify(
+            {
+                "message": "导入成功",
+                "mode": mode,
+                "summary": result_summary,
+            }
+        )
+
+    except Exception as e:
+        return jsonify({"error": f"导入过程中发生错误：{e}"}), 500
 
 
 if __name__ == "__main__":
