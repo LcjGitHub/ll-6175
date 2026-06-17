@@ -51,4 +51,26 @@ export const partApi = {
   remove: (id) => api.delete(`/parts/${id}`),
 }
 
+/**
+ * @typedef {Object} GameRankItem
+ * @property {number} id
+ * @property {string} name
+ * @property {number} part_count
+ * @property {number} total_cost
+ */
+
+/**
+ * @typedef {Object} StatsSummary
+ * @property {number} total_parts
+ * @property {number} completed_parts
+ * @property {number} pending_parts
+ * @property {number} total_cost
+ * @property {GameRankItem[]} game_ranking
+ */
+
+export const statsApi = {
+  /** @returns {Promise<StatsSummary>} */
+  summary: () => api.get('/stats/summary').then((r) => r.data),
+}
+
 export default api

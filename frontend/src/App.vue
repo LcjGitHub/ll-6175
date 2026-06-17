@@ -14,7 +14,7 @@ import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import Tag from 'primevue/tag'
 
-import { gameApi, partApi } from './api'
+import { gameApi, partApi, statsApi } from './api'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -24,6 +24,9 @@ const selectedGame = ref(null)
 const parts = ref([])
 const loadingGames = ref(false)
 const loadingParts = ref(false)
+
+const stats = ref(null)
+const loadingStats = ref(false)
 
 const gameDialog = ref(false)
 const gameForm = ref({ id: null, name: '' })
@@ -56,6 +59,24 @@ async function loadGames() {
   } finally {
     loadingGames.value = false
   }
+}
+
+async function loadStats() {
+  loadingStats.value = true
+  try {
+    stats.value = await statsApi.summary()
+  } catch (err) {
+    showError(err, '加载统计数据失败')
+  } finally {
+    loadingStats.value = false
+  }
+}
+
+function getBarWidth(cost) {
+  if (!stats.value?.game_ranking?.length) return 0
+  const maxCost = Math.max(...stats.value.game_ranking.map((g) => g.total_cost))
+  if (maxCost === 0) return 0
+  return (cost / maxCost) * 100
 }
 
 async function loadParts() {
@@ -101,6 +122,7 @@ async function saveGame() {
     }
     gameDialog.value = false
     await loadGames()
+    await loadStats()
   } catch (err) {
     showError(err)
   }
@@ -121,6 +143,7 @@ function confirmDeleteGame(game) {
         }
         toast.add({ severity: 'success', summary: '成功', detail: '游戏已删除', life: 2000 })
         await loadGames()
+        await loadStats()
       } catch (err) {
         showError(err)
       }
@@ -182,6 +205,7 @@ async function savePart() {
     partDialog.value = false
     await loadParts()
     await loadGames()
+    await loadStats()
   } catch (err) {
     showError(err)
   }
@@ -199,6 +223,7 @@ function confirmDeletePart(part) {
         toast.add({ severity: 'success', summary: '成功', detail: '缺件已删除', life: 2000 })
         await loadParts()
         await loadGames()
+        await loadStats()
       } catch (err) {
         showError(err)
       }
@@ -206,7 +231,10 @@ function confirmDeletePart(part) {
   })
 }
 
-onMounted(loadGames)
+onMounted(() => {
+  loadGames()
+  loadStats()
+})
 </script>
 
 <template>
@@ -220,6 +248,84 @@ onMounted(loadGames)
         <p class="subtitle">管理桌游配件缺失与替换方案</p>
       </div>
     </header>
+
+    <!-- 费用统计看板 -->
+    <section class="stats-dashboard">
+      <div class="stats-cards">
+        <div class="stat-card">
+          <div class="stat-icon total">
+            <i class="pi pi-list-check" />
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">缺件总数</div>
+            <div class="stat-value">{{ loadingStats ? '—' : stats?.total_parts ?? 0 }}</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon completed">
+            <i class="pi pi-check-circle" />
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">已完成</div>
+            <div class="stat-value">{{ loadingStats ? '—' : stats?.completed_parts ?? 0 }}</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon pending">
+            <i class="pi pi-clock" />
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">未完成</div>
+            <div class="stat-value">{{ loadingStats ? '—' : stats?.pending_parts ?? 0 }}</div>
+          </div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-icon cost">
+            <i class="pi pi-wallet" />
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">总花费</div>
+            <div class="stat-value">¥{{ loadingStats ? '—' : Number(stats?.total_cost ?? 0).toFixed(2) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 费用排行 -->
+      <div class="ranking-panel">
+        <div class="ranking-header">
+          <h3>游戏费用排行</h3>
+        </div>
+        <div v-if="loadingStats" class="empty-hint">加载中…</div>
+        <div v-else-if="stats?.game_ranking?.length" class="ranking-list">
+          <div
+            v-for="(item, index) in stats.game_ranking"
+            :key="item.id"
+            class="ranking-item"
+          >
+            <div class="rank-badge" :class="'rank-' + (index + 1)">
+              {{ index + 1 }}
+            </div>
+            <div class="rank-info">
+              <div class="rank-name">{{ item.name }}</div>
+              <div class="rank-bar">
+                <div
+                  class="rank-bar-fill"
+                  :style="{ width: getBarWidth(item.total_cost) + '%' }"
+                ></div>
+              </div>
+            </div>
+            <div class="rank-cost">
+              <span class="cost-amount">¥{{ Number(item.total_cost).toFixed(2) }}</span>
+              <span class="part-count">{{ item.part_count }} 件</span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty-hint">暂无数据</div>
+      </div>
+    </section>
 
     <div class="layout">
       <!-- 游戏列表 -->
@@ -558,5 +664,201 @@ body {
 
 .parts-table {
   font-size: 0.9rem;
+}
+
+/* 统计看板 */
+.stats-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 768px) {
+  .stats-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.stat-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.stat-icon.total {
+  background: #eff6ff;
+  color: #3b82f6;
+}
+
+.stat-icon.completed {
+  background: #ecfdf5;
+  color: #10b981;
+}
+
+.stat-icon.pending {
+  background: #fffbeb;
+  color: #f59e0b;
+}
+
+.stat-icon.cost {
+  background: #faf5ff;
+  color: #8b5cf6;
+}
+
+.stat-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.stat-label {
+  font-size: 0.875rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1a1a2e;
+  line-height: 1.2;
+}
+
+.ranking-panel {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 1rem 1.25rem;
+}
+
+.ranking-header {
+  margin-bottom: 1rem;
+}
+
+.ranking-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.ranking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ranking-item {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.rank-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.rank-badge.rank-1 {
+  background: #fbbf24;
+  color: #fff;
+}
+
+.rank-badge.rank-2 {
+  background: #94a3b8;
+  color: #fff;
+}
+
+.rank-badge.rank-3 {
+  background: #d97706;
+  color: #fff;
+}
+
+.rank-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rank-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #1a1a2e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rank-bar {
+  height: 6px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.rank-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.rank-cost {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+  flex-shrink: 0;
+}
+
+.cost-amount {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a1a2e;
+}
+
+.part-count {
+  font-size: 0.75rem;
+  color: #94a3b8;
 }
 </style>

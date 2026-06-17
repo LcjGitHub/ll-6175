@@ -93,6 +93,50 @@ def delete_game(game_id: int):
     return "", 204
 
 
+# ── 统计汇总 ──────────────────────────────────────────
+
+
+@app.get("/api/stats/summary")
+def get_stats_summary():
+    """获取费用统计汇总数据。"""
+    with get_connection() as conn:
+        total_row = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS total_parts,
+                SUM(CASE WHEN completion_date IS NOT NULL THEN 1 ELSE 0 END) AS completed_parts,
+                SUM(CASE WHEN completion_date IS NULL THEN 1 ELSE 0 END) AS pending_parts,
+                COALESCE(SUM(cost), 0) AS total_cost
+            FROM missing_parts
+            """
+        ).fetchone()
+
+        rank_rows = conn.execute(
+            """
+            SELECT
+                g.id,
+                g.name,
+                COUNT(mp.id) AS part_count,
+                COALESCE(SUM(mp.cost), 0) AS total_cost
+            FROM games g
+            LEFT JOIN missing_parts mp ON mp.game_id = g.id
+            GROUP BY g.id, g.name
+            ORDER BY total_cost DESC, g.name
+            """
+        ).fetchall()
+
+    summary = row_to_dict(total_row)
+    game_ranking = [row_to_dict(r) for r in rank_rows]
+
+    return jsonify({
+        "total_parts": summary["total_parts"],
+        "completed_parts": summary["completed_parts"],
+        "pending_parts": summary["pending_parts"],
+        "total_cost": summary["total_cost"],
+        "game_ranking": game_ranking,
+    })
+
+
 # ── 缺件 ──────────────────────────────────────────────
 
 
