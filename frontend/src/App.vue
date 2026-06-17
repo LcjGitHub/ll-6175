@@ -79,6 +79,24 @@ function getBarWidth(cost) {
   return (cost / maxCost) * 100
 }
 
+function getStatBarWidth(type) {
+  if (!stats.value) return 0
+  const total = stats.value.total_parts
+  if (total === 0) return 0
+  switch (type) {
+    case 'total':
+      return 100
+    case 'completed':
+      return (stats.value.completed_parts / total) * 100
+    case 'pending':
+      return (stats.value.pending_parts / total) * 100
+    case 'cost':
+      return 100
+    default:
+      return 0
+  }
+}
+
 async function loadParts() {
   if (!selectedGame.value) {
     parts.value = []
@@ -251,6 +269,10 @@ onMounted(() => {
 
     <!-- 费用统计看板 -->
     <section class="stats-dashboard">
+      <div class="stats-header">
+        <h2>费用统计看板</h2>
+      </div>
+
       <div class="stats-cards">
         <div class="stat-card">
           <div class="stat-icon total">
@@ -259,6 +281,12 @@ onMounted(() => {
           <div class="stat-content">
             <div class="stat-label">缺件总数</div>
             <div class="stat-value">{{ loadingStats ? '—' : stats?.total_parts ?? 0 }}</div>
+            <div class="stat-bar">
+              <div
+                class="stat-bar-fill total"
+                :style="{ width: getStatBarWidth('total') + '%' }"
+              ></div>
+            </div>
           </div>
         </div>
 
@@ -267,8 +295,14 @@ onMounted(() => {
             <i class="pi pi-check-circle" />
           </div>
           <div class="stat-content">
-            <div class="stat-label">已完成</div>
+            <div class="stat-label">已替换完成</div>
             <div class="stat-value">{{ loadingStats ? '—' : stats?.completed_parts ?? 0 }}</div>
+            <div class="stat-bar">
+              <div
+                class="stat-bar-fill completed"
+                :style="{ width: getStatBarWidth('completed') + '%' }"
+              ></div>
+            </div>
           </div>
         </div>
 
@@ -279,6 +313,12 @@ onMounted(() => {
           <div class="stat-content">
             <div class="stat-label">未完成</div>
             <div class="stat-value">{{ loadingStats ? '—' : stats?.pending_parts ?? 0 }}</div>
+            <div class="stat-bar">
+              <div
+                class="stat-bar-fill pending"
+                :style="{ width: getStatBarWidth('pending') + '%' }"
+              ></div>
+            </div>
           </div>
         </div>
 
@@ -289,6 +329,12 @@ onMounted(() => {
           <div class="stat-content">
             <div class="stat-label">总花费</div>
             <div class="stat-value">¥{{ loadingStats ? '—' : Number(stats?.total_cost ?? 0).toFixed(2) }}</div>
+            <div class="stat-bar">
+              <div
+                class="stat-bar-fill cost"
+                :style="{ width: getStatBarWidth('cost') + '%' }"
+              ></div>
+            </div>
           </div>
         </div>
       </div>
@@ -674,6 +720,19 @@ body {
   margin-bottom: 1.5rem;
 }
 
+.stats-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stats-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
 .stats-cards {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -751,6 +810,36 @@ body {
   font-weight: 700;
   color: #1a1a2e;
   line-height: 1.2;
+}
+
+.stat-bar {
+  height: 5px;
+  background: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.stat-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.stat-bar-fill.total {
+  background: #3b82f6;
+}
+
+.stat-bar-fill.completed {
+  background: #10b981;
+}
+
+.stat-bar-fill.pending {
+  background: #f59e0b;
+}
+
+.stat-bar-fill.cost {
+  background: #8b5cf6;
 }
 
 .ranking-panel {
