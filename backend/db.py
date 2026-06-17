@@ -25,25 +25,61 @@ def init_db() -> None:
                 name TEXT NOT NULL UNIQUE
             );
 
+            CREATE TABLE IF NOT EXISTS purchase_channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                contact TEXT,
+                remark TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS missing_parts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 game_id INTEGER NOT NULL,
+                channel_id INTEGER,
                 accessory TEXT NOT NULL,
                 replacement_plan TEXT NOT NULL,
                 cost REAL NOT NULL DEFAULT 0,
                 completion_date TEXT,
-                FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE
+                FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
+                FOREIGN KEY (channel_id) REFERENCES purchase_channels(id) ON DELETE SET NULL
             );
             """
         )
+
+        _migrate_missing_parts(conn)
 
         count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
         if count == 0:
             _seed(conn)
 
 
+def _migrate_missing_parts(conn: sqlite3.Connection) -> None:
+    """为已有数据库添加 channel_id 列。"""
+    columns = conn.execute(
+        "PRAGMA table_info(missing_parts)"
+    ).fetchall()
+    col_names = [col["name"] for col in columns]
+    if "channel_id" not in col_names:
+        conn.execute(
+            "ALTER TABLE missing_parts ADD COLUMN channel_id INTEGER REFERENCES purchase_channels(id) ON DELETE SET NULL"
+        )
+
+
 def _seed(conn: sqlite3.Connection) -> None:
-    """写入 3 个游戏，各 2 条缺件记录。"""
+    """写入 3 个游戏，各 2 条缺件记录及示例采购渠道。"""
+    channels = [
+        ("淘宝桌游配件专营店", "客服旺旺：bg-parts，电话：400-123-4567", "主要购买原装桌游配件"),
+        ("3D打印定制工作室", "微信：3dprint_mini，QQ：123456789", "定制特殊形状的塑料零件"),
+        ("拼多多通用耗材店", "店铺ID：bg_supplies", "购买卡牌套、骰子等通用配件"),
+    ]
+    channel_ids = []
+    for name, contact, remark in channels:
+        cur = conn.execute(
+            "INSERT INTO purchase_channels (name, contact, remark) VALUES (?, ?, ?)",
+            (name, contact, remark),
+        )
+        channel_ids.append(cur.lastrowid)
+
     games = [
         "卡坦岛",
         "璀璨宝石",
@@ -51,16 +87,16 @@ def _seed(conn: sqlite3.Connection) -> None:
     ]
     parts = [
         [
-            ("红色道路板块", "淘宝补购原装配件", 28.5, "2025-03-12"),
-            ("六面骰", "3D 打印替代件", 5.0, None),
+            ("红色道路板块", "淘宝补购原装配件", 28.5, "2025-03-12", channel_ids[0]),
+            ("六面骰", "3D 打印替代件", 5.0, None, channel_ids[1]),
         ],
         [
-            ("绿色宝石代币", "通用玻璃筹码替代", 15.0, "2025-01-20"),
-            ("卡牌套", "标准 57×89mm 牌套", 32.0, "2025-02-08"),
+            ("绿色宝石代币", "通用玻璃筹码替代", 15.0, "2025-01-20", channel_ids[2]),
+            ("卡牌套", "标准 57×89mm 牌套", 32.0, "2025-02-08", channel_ids[2]),
         ],
         [
-            ("预言家角色牌", "高清扫描重印", 2.0, "2024-11-05"),
-            ("法官锤", "木质迷你锤替代", 18.0, None),
+            ("预言家角色牌", "高清扫描重印", 2.0, "2024-11-05", None),
+            ("法官锤", "木质迷你锤替代", 18.0, None, channel_ids[1]),
         ],
     ]
 
@@ -70,8 +106,8 @@ def _seed(conn: sqlite3.Connection) -> None:
         conn.executemany(
             """
             INSERT INTO missing_parts
-                (game_id, accessory, replacement_plan, cost, completion_date)
-            VALUES (?, ?, ?, ?, ?)
+                (game_id, accessory, replacement_plan, cost, completion_date, channel_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             [(game_id, *p) for p in game_parts],
         )

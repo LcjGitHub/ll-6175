@@ -13,8 +13,12 @@ import DatePicker from 'primevue/datepicker'
 import Toast from 'primevue/toast'
 import ConfirmDialog from 'primevue/confirmdialog'
 import Tag from 'primevue/tag'
+import Dropdown from 'primevue/dropdown'
+import TabView from 'primevue/tabview'
+import TabPanel from 'primevue/tabpanel'
+import Textarea from 'primevue/textarea'
 
-import { gameApi, partApi, statsApi } from './api'
+import { gameApi, partApi, statsApi, channelApi } from './api'
 
 const toast = useToast()
 const confirm = useConfirm()
@@ -38,7 +42,21 @@ const partForm = ref({
   replacement_plan: '',
   cost: 0,
   completion_date: null,
+  channel_id: null,
 })
+
+const channels = ref([])
+const loadingChannels = ref(false)
+
+const channelDialog = ref(false)
+const channelForm = ref({
+  id: null,
+  name: '',
+  contact: '',
+  remark: '',
+})
+
+const activeTab = ref(0)
 
 /** @param {unknown} err */
 function showError(err, fallback = '操作失败') {
@@ -169,6 +187,81 @@ function confirmDeleteGame(game) {
   })
 }
 
+async function loadChannels() {
+  loadingChannels.value = true
+  try {
+    channels.value = await channelApi.list()
+  } catch (err) {
+    showError(err, '加载渠道列表失败')
+  } finally {
+    loadingChannels.value = false
+  }
+}
+
+function openChannelDialog(channel = null) {
+  channelForm.value = channel
+    ? {
+        id: channel.id,
+        name: channel.name,
+        contact: channel.contact || '',
+        remark: channel.remark || '',
+      }
+    : {
+        id: null,
+        name: '',
+        contact: '',
+        remark: '',
+      }
+  channelDialog.value = true
+}
+
+async function saveChannel() {
+  const name = channelForm.value.name.trim()
+  if (!name) {
+    toast.add({ severity: 'warn', summary: '提示', detail: '请输入渠道名称', life: 3000 })
+    return
+  }
+  try {
+    const payload = {
+      name,
+      contact: channelForm.value.contact.trim() || undefined,
+      remark: channelForm.value.remark.trim() || undefined,
+    }
+    if (channelForm.value.id) {
+      await channelApi.update(channelForm.value.id, payload)
+      toast.add({ severity: 'success', summary: '成功', detail: '渠道已更新', life: 2000 })
+    } else {
+      await channelApi.create(payload)
+      toast.add({ severity: 'success', summary: '成功', detail: '渠道已添加', life: 2000 })
+    }
+    channelDialog.value = false
+    await loadChannels()
+  } catch (err) {
+    showError(err)
+  }
+}
+
+function confirmDeleteChannel(channel) {
+  confirm.require({
+    message: `确定删除「${channel.name}」？关联的缺件记录将保留但渠道信息会被清空。`,
+    header: '确认删除',
+    icon: 'pi pi-exclamation-triangle',
+    acceptClass: 'p-button-danger',
+    accept: async () => {
+      try {
+        await channelApi.remove(channel.id)
+        toast.add({ severity: 'success', summary: '成功', detail: '渠道已删除', life: 2000 })
+        await loadChannels()
+        if (selectedGame.value) {
+          await loadParts()
+        }
+      } catch (err) {
+        showError(err)
+      }
+    },
+  })
+}
+
 function openPartDialog(part = null) {
   partForm.value = part
     ? {
@@ -177,6 +270,7 @@ function openPartDialog(part = null) {
         replacement_plan: part.replacement_plan,
         cost: part.cost,
         completion_date: part.completion_date ? new Date(part.completion_date) : null,
+        channel_id: part.channel_id,
       }
     : {
         id: null,
@@ -184,6 +278,7 @@ function openPartDialog(part = null) {
         replacement_plan: '',
         cost: 0,
         completion_date: null,
+        channel_id: null,
       }
   partDialog.value = true
 }
@@ -205,6 +300,7 @@ async function savePart() {
     replacement_plan: partForm.value.replacement_plan.trim(),
     cost: partForm.value.cost ?? 0,
     completion_date: formatDate(partForm.value.completion_date),
+    channel_id: partForm.value.channel_id,
   }
 
   if (!payload.accessory || !payload.replacement_plan) {
@@ -252,6 +348,7 @@ function confirmDeletePart(part) {
 onMounted(() => {
   loadGames()
   loadStats()
+  loadChannels()
 })
 </script>
 
@@ -373,117 +470,190 @@ onMounted(() => {
       </div>
     </section>
 
-    <div class="layout">
-      <!-- 游戏列表 -->
-      <aside class="panel game-panel">
-        <div class="panel-header">
-          <h2>桌游列表</h2>
-          <Button icon="pi pi-plus" label="新增" size="small" @click="openGameDialog()" />
-        </div>
+    <TabView v-model:activeIndex="activeTab" class="main-tabs">
+      <TabPanel header="桌游管理">
+        <div class="layout">
+          <!-- 游戏列表 -->
+          <aside class="panel game-panel">
+            <div class="panel-header">
+              <h2>桌游列表</h2>
+              <Button icon="pi pi-plus" label="新增" size="small" @click="openGameDialog()" />
+            </div>
 
-        <div v-if="loadingGames" class="empty-hint">加载中…</div>
-        <ul v-else-if="games.length" class="game-list">
-          <li
-            v-for="game in games"
-            :key="game.id"
-            :class="['game-item', { active: selectedGame?.id === game.id }]"
-            @click="selectGame(game)"
+            <div v-if="loadingGames" class="empty-hint">加载中…</div>
+            <ul v-else-if="games.length" class="game-list">
+              <li
+                v-for="game in games"
+                :key="game.id"
+                :class="['game-item', { active: selectedGame?.id === game.id }]"
+                @click="selectGame(game)"
+              >
+                <div class="game-info">
+                  <span class="game-name">{{ game.name }}</span>
+                  <Tag :value="`${game.part_count ?? 0} 条缺件`" severity="secondary" />
+                </div>
+                <div class="game-actions" @click.stop>
+                  <Button
+                    icon="pi pi-pencil"
+                    text
+                    rounded
+                    size="small"
+                    @click="openGameDialog(game)"
+                  />
+                  <Button
+                    icon="pi pi-trash"
+                    text
+                    rounded
+                    severity="danger"
+                    size="small"
+                    @click="confirmDeleteGame(game)"
+                  />
+                </div>
+              </li>
+            </ul>
+            <div v-else class="empty-hint">暂无游戏，点击「新增」添加</div>
+          </aside>
+
+          <!-- 缺件详情 -->
+          <main class="panel parts-panel">
+            <div class="panel-header">
+              <h2>
+                {{ selectedGame ? `「${selectedGame.name}」缺件详情` : '缺件详情' }}
+              </h2>
+              <Button
+                v-if="selectedGame"
+                icon="pi pi-plus"
+                label="新增缺件"
+                size="small"
+                @click="openPartDialog()"
+              />
+            </div>
+
+            <div v-if="!selectedGame" class="empty-hint large">
+              <i class="pi pi-arrow-left" />
+              请从左侧选择一个桌游
+            </div>
+
+            <DataTable
+              v-else
+              :value="parts"
+              :loading="loadingParts"
+              striped-rows
+              paginator
+              :rows="10"
+              data-key="id"
+              class="parts-table"
+            >
+              <Column field="accessory" header="配件" sortable />
+              <Column field="channel_name" header="采购渠道" sortable>
+                <template #body="{ data }">
+                  <Tag
+                    v-if="data.channel_name"
+                    :value="data.channel_name"
+                    severity="info"
+                  />
+                  <span v-else class="text-muted">未指定</span>
+                </template>
+              </Column>
+              <Column field="replacement_plan" header="替换方案" />
+              <Column field="cost" header="成本 (¥)" sortable>
+                <template #body="{ data }">
+                  {{ Number(data.cost).toFixed(2) }}
+                </template>
+              </Column>
+              <Column field="completion_date" header="完成日期" sortable>
+                <template #body="{ data }">
+                  <Tag
+                    v-if="data.completion_date"
+                    :value="data.completion_date"
+                    severity="success"
+                  />
+                  <Tag v-else value="未完成" severity="warn" />
+                </template>
+              </Column>
+              <Column header="操作" style="width: 8rem">
+                <template #body="{ data }">
+                  <Button
+                    icon="pi pi-pencil"
+                    text
+                    rounded
+                    size="small"
+                    @click="openPartDialog(data)"
+                  />
+                  <Button
+                    icon="pi pi-trash"
+                    text
+                    rounded
+                    severity="danger"
+                    size="small"
+                    @click="confirmDeletePart(data)"
+                  />
+                </template>
+              </Column>
+            </DataTable>
+          </main>
+        </div>
+      </TabPanel>
+
+      <TabPanel header="采购渠道管理">
+        <div class="channel-panel">
+          <div class="panel-header">
+            <h2>采购渠道列表</h2>
+            <Button icon="pi pi-plus" label="新增渠道" size="small" @click="openChannelDialog()" />
+          </div>
+
+          <div v-if="loadingChannels" class="empty-hint">加载中…</div>
+          <DataTable
+            v-else-if="channels.length"
+            :value="channels"
+            striped-rows
+            paginator
+            :rows="10"
+            data-key="id"
+            class="channels-table"
           >
-            <div class="game-info">
-              <span class="game-name">{{ game.name }}</span>
-              <Tag :value="`${game.part_count ?? 0} 条缺件`" severity="secondary" />
-            </div>
-            <div class="game-actions" @click.stop>
-              <Button
-                icon="pi pi-pencil"
-                text
-                rounded
-                size="small"
-                @click="openGameDialog(game)"
-              />
-              <Button
-                icon="pi pi-trash"
-                text
-                rounded
-                severity="danger"
-                size="small"
-                @click="confirmDeleteGame(game)"
-              />
-            </div>
-          </li>
-        </ul>
-        <div v-else class="empty-hint">暂无游戏，点击「新增」添加</div>
-      </aside>
-
-      <!-- 缺件详情 -->
-      <main class="panel parts-panel">
-        <div class="panel-header">
-          <h2>
-            {{ selectedGame ? `「${selectedGame.name}」缺件详情` : '缺件详情' }}
-          </h2>
-          <Button
-            v-if="selectedGame"
-            icon="pi pi-plus"
-            label="新增缺件"
-            size="small"
-            @click="openPartDialog()"
-          />
+            <Column field="name" header="渠道名称" sortable />
+            <Column field="contact" header="联系方式">
+              <template #body="{ data }">
+                <span v-if="data.contact">{{ data.contact }}</span>
+                <span v-else class="text-muted">未填写</span>
+              </template>
+            </Column>
+            <Column field="remark" header="备注">
+              <template #body="{ data }">
+                <span v-if="data.remark">{{ data.remark }}</span>
+                <span v-else class="text-muted">无</span>
+              </template>
+            </Column>
+            <Column field="part_count" header="关联缺件" sortable>
+              <template #body="{ data }">
+                <Tag :value="`${data.part_count ?? 0} 条`" severity="secondary" />
+              </template>
+            </Column>
+            <Column header="操作" style="width: 8rem">
+              <template #body="{ data }">
+                <Button
+                  icon="pi pi-pencil"
+                  text
+                  rounded
+                  size="small"
+                  @click="openChannelDialog(data)"
+                />
+                <Button
+                  icon="pi pi-trash"
+                  text
+                  rounded
+                  severity="danger"
+                  size="small"
+                  @click="confirmDeleteChannel(data)"
+                />
+              </template>
+            </Column>
+          </DataTable>
+          <div v-else class="empty-hint">暂无采购渠道，点击「新增渠道」添加</div>
         </div>
-
-        <div v-if="!selectedGame" class="empty-hint large">
-          <i class="pi pi-arrow-left" />
-          请从左侧选择一个桌游
-        </div>
-
-        <DataTable
-          v-else
-          :value="parts"
-          :loading="loadingParts"
-          striped-rows
-          paginator
-          :rows="10"
-          data-key="id"
-          class="parts-table"
-        >
-          <Column field="accessory" header="配件" sortable />
-          <Column field="replacement_plan" header="替换方案" />
-          <Column field="cost" header="成本 (¥)" sortable>
-            <template #body="{ data }">
-              {{ Number(data.cost).toFixed(2) }}
-            </template>
-          </Column>
-          <Column field="completion_date" header="完成日期" sortable>
-            <template #body="{ data }">
-              <Tag
-                v-if="data.completion_date"
-                :value="data.completion_date"
-                severity="success"
-              />
-              <Tag v-else value="未完成" severity="warn" />
-            </template>
-          </Column>
-          <Column header="操作" style="width: 8rem">
-            <template #body="{ data }">
-              <Button
-                icon="pi pi-pencil"
-                text
-                rounded
-                size="small"
-                @click="openPartDialog(data)"
-              />
-              <Button
-                icon="pi pi-trash"
-                text
-                rounded
-                severity="danger"
-                size="small"
-                @click="confirmDeletePart(data)"
-              />
-            </template>
-          </Column>
-        </DataTable>
-      </main>
-    </div>
+      </TabPanel>
+    </TabView>
 
     <!-- 游戏对话框 -->
     <Dialog
@@ -513,6 +683,20 @@ onMounted(() => {
         <div class="form-field">
           <label for="part-accessory">配件</label>
           <InputText id="part-accessory" v-model="partForm.accessory" class="w-full" />
+        </div>
+        <div class="form-field">
+          <label for="part-channel">采购渠道</label>
+          <Dropdown
+            id="part-channel"
+            v-model="partForm.channel_id"
+            :options="channels"
+            option-label="name"
+            option-value="id"
+            placeholder="请选择渠道（可选）"
+            editable
+            show-clear
+            class="w-full"
+          />
         </div>
         <div class="form-field">
           <label for="part-plan">替换方案</label>
@@ -545,6 +729,44 @@ onMounted(() => {
       <template #footer>
         <Button label="取消" text @click="partDialog = false" />
         <Button label="保存" @click="savePart" />
+      </template>
+    </Dialog>
+
+    <!-- 渠道对话框 -->
+    <Dialog
+      v-model:visible="channelDialog"
+      :header="channelForm.id ? '编辑渠道' : '新增渠道'"
+      modal
+      :style="{ width: '28rem' }"
+    >
+      <div class="form-stack">
+        <div class="form-field">
+          <label for="channel-name">渠道名称</label>
+          <InputText id="channel-name" v-model="channelForm.name" autofocus class="w-full" />
+        </div>
+        <div class="form-field">
+          <label for="channel-contact">联系方式</label>
+          <InputText
+            id="channel-contact"
+            v-model="channelForm.contact"
+            placeholder="电话、微信、店铺地址等"
+            class="w-full"
+          />
+        </div>
+        <div class="form-field">
+          <label for="channel-remark">备注</label>
+          <Textarea
+            id="channel-remark"
+            v-model="channelForm.remark"
+            :rows="3"
+            placeholder="可选，记录渠道特点、主营产品等"
+            class="w-full"
+          />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="取消" text @click="channelDialog = false" />
+        <Button label="保存" @click="saveChannel" />
       </template>
     </Dialog>
   </div>
@@ -948,6 +1170,40 @@ body {
 
 .part-count {
   font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+/* TabView 样式 */
+.main-tabs {
+  margin-top: 0;
+}
+
+.main-tabs :deep(.p-tabview-nav) {
+  margin-bottom: 1rem;
+}
+
+.main-tabs :deep(.p-tabview-panels) {
+  padding: 0;
+}
+
+.main-tabs :deep(.p-tabview-panel) {
+  padding: 0;
+}
+
+/* 渠道管理面板 */
+.channel-panel {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 1rem;
+  min-height: 420px;
+}
+
+.channels-table {
+  font-size: 0.9rem;
+}
+
+.text-muted {
   color: #94a3b8;
 }
 </style>

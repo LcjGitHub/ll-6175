@@ -13,9 +13,20 @@ const api = axios.create({
  */
 
 /**
+ * @typedef {Object} PurchaseChannel
+ * @property {number} id
+ * @property {string} name
+ * @property {string|null} contact
+ * @property {string|null} remark
+ * @property {number} [part_count]
+ */
+
+/**
  * @typedef {Object} MissingPart
  * @property {number} id
  * @property {number} game_id
+ * @property {number|null} channel_id
+ * @property {string|null} channel_name
  * @property {string} accessory
  * @property {string} replacement_plan
  * @property {number} cost
@@ -34,6 +45,20 @@ export const gameApi = {
 
   /** @param {number} id */
   remove: (id) => api.delete(`/games/${id}`),
+}
+
+export const channelApi = {
+  /** @returns {Promise<PurchaseChannel[]>} */
+  list: () => api.get('/channels').then((r) => r.data),
+
+  /** @param {{ name: string, contact?: string, remark?: string }} data */
+  create: (data) => api.post('/channels', data).then((r) => r.data),
+
+  /** @param {number} id @param {{ name: string, contact?: string, remark?: string }} data */
+  update: (id, data) => api.put(`/channels/${id}`, data).then((r) => r.data),
+
+  /** @param {number} id */
+  remove: (id) => api.delete(`/channels/${id}`),
 }
 
 export const partApi = {
