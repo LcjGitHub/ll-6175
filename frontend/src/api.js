@@ -31,6 +31,7 @@ const api = axios.create({
  * @property {string} replacement_plan
  * @property {number} cost
  * @property {string|null} completion_date
+ * @property {'高'|'中'|'低'} priority
  */
 
 export const gameApi = {
@@ -62,8 +63,12 @@ export const channelApi = {
 }
 
 export const partApi = {
-  /** @param {number} gameId @returns {Promise<MissingPart[]>} */
-  list: (gameId) => api.get(`/games/${gameId}/parts`).then((r) => r.data),
+  /** @param {number} gameId @param {string} [priority] @returns {Promise<MissingPart[]>} */
+  list: (gameId, priority) => {
+    const params = {}
+    if (priority) params.priority = priority
+    return api.get(`/games/${gameId}/parts`, { params }).then((r) => r.data)
+  },
 
   /** @param {number} gameId @param {Omit<MissingPart, 'id'|'game_id'>} data */
   create: (gameId, data) =>

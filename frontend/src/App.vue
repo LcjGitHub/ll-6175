@@ -43,6 +43,7 @@ const partForm = ref({
   cost: 0,
   completion_date: null,
   channel_id: null,
+  priority: '中',
 })
 
 const channels = ref([])
@@ -57,6 +58,19 @@ const channelForm = ref({
 })
 
 const activeTab = ref(0)
+
+const priorityFilter = ref('')
+const priorityOptions = [
+  { label: '全部优先级', value: '' },
+  { label: '高优先级', value: '高' },
+  { label: '中优先级', value: '中' },
+  { label: '低优先级', value: '低' },
+]
+const priorityEditOptions = [
+  { label: '高', value: '高' },
+  { label: '中', value: '中' },
+  { label: '低', value: '低' },
+]
 
 const logs = ref([])
 const loadingLogs = ref(false)
@@ -143,7 +157,7 @@ async function loadParts() {
   }
   loadingParts.value = true
   try {
-    parts.value = await partApi.list(selectedGame.value.id)
+    parts.value = await partApi.list(selectedGame.value.id, priorityFilter.value || undefined)
   } catch (err) {
     showError(err, '加载缺件列表失败')
   } finally {
@@ -153,6 +167,7 @@ async function loadParts() {
 
 function selectGame(game) {
   selectedGame.value = game
+  priorityFilter.value = ''
   loadParts()
 }
 
@@ -239,6 +254,30 @@ function getOpTypeSeverity(opType) {
   return 'secondary'
 }
 
+function getPrioritySeverity(priority) {
+  switch (priority) {
+    case '高': return 'danger'
+    case '中': return 'warn'
+    case '低': return 'info'
+    default: return 'secondary'
+  }
+}
+
+function getPriorityRank(priority) {
+  switch (priority) {
+    case '高': return 1
+    case '中': return 2
+    case '低': return 3
+    default: return 4
+  }
+}
+
+function prioritySortFunction(data1, data2, field, order) {
+  const rank1 = getPriorityRank(data1.priority)
+  const rank2 = getPriorityRank(data2.priority)
+  return order * (rank1 - rank2)
+}
+
 function openChannelDialog(channel = null) {
   channelForm.value = channel
     ? {
@@ -314,6 +353,7 @@ function openPartDialog(part = null) {
         cost: part.cost,
         completion_date: part.completion_date ? new Date(part.completion_date) : null,
         channel_id: part.channel_id,
+        priority: part.priority || '中',
       }
     : {
         id: null,
@@ -322,6 +362,7 @@ function openPartDialog(part = null) {
         cost: 0,
         completion_date: null,
         channel_id: null,
+        priority: '中',
       }
   partDialog.value = true
 }
@@ -344,6 +385,7 @@ async function savePart() {
     cost: partForm.value.cost ?? 0,
     completion_date: formatDate(partForm.value.completion_date),
     channel_id: partForm.value.channel_id,
+    priority: partForm.value.priority || '中',
   }
 
   if (!payload.accessory || !payload.replacement_plan) {
@@ -647,7 +689,15 @@ watch(activeTab, (val) => {
               >
                 <div class="game-info">
                   <span class="game-name">{{ game.name }}</span>
-                  <Tag :value="`${game.part_count ?? 0} 条缺件`" severity="secondary" />
+                  <div class="game-tags">
+                    <Tag :value="`${game.part_count ?? 0} 条缺件`" severity="secondary" />
+                    <Tag
+                      v-if="(game.high_priority_count ?? 0) > 0"
+                      :value="`${game.high_priority_count} 高优`"
+                      severity="danger"
+                      class="high-priority-tag"
+                    />
+                  </div>
                 </div>
                 <div class="game-actions" @click.stop>
                   <Button
@@ -677,13 +727,25 @@ watch(activeTab, (val) => {
               <h2>
                 {{ selectedGame ? `「${selectedGame.name}」缺件详情` : '缺件详情' }}
               </h2>
-              <Button
-                v-if="selectedGame"
-                icon="pi pi-plus"
-                label="新增缺件"
-                size="small"
-                @click="openPartDialog()"
-              />
+              <div class="parts-header-actions">
+                <Dropdown
+                  v-model="priorityFilter"
+                  :options="priorityOptions"
+                  option-label="label"
+                  option-value="value"
+                  placeholder="筛选优先级"
+                  show-clear
+                  class="priority-filter-dropdown"
+                  @change="loadParts"
+                />
+                <Button
+                  v-if="selectedGame"
+                  icon="pi pi-plus"
+                  label="新增缺件"
+                  size="small"
+                  @click="openPartDialog()"
+                />
+              </div>
             </div>
 
             <div v-if="!selectedGame" class="empty-hint large">
@@ -700,8 +762,18 @@ watch(activeTab, (val) => {
               :rows="10"
               data-key="id"
               class="parts-table"
+              sort-field="priority"
+              :sort-order="1"
             >
               <Column field="accessory" header="配件" sortable />
+              <Column field="priority" header="优先级" sortable :sortFunction="prioritySortFunction">
+                <template #body="{ data }">
+                  <Tag
+                    :value="data.priority || '中'"
+                    :severity="getPrioritySeverity(data.priority)"
+                  />
+                </template>
+              </Column>
               <Column field="channel_name" header="采购渠道" sortable>
                 <template #body="{ data }">
                   <Tag
@@ -890,6 +962,17 @@ watch(activeTab, (val) => {
         <div class="form-field">
           <label for="part-accessory">配件</label>
           <InputText id="part-accessory" v-model="partForm.accessory" class="w-full" />
+        </div>
+        <div class="form-field">
+          <label for="part-priority">优先级</label>
+          <Dropdown
+            id="part-priority"
+            v-model="partForm.priority"
+            :options="priorityEditOptions"
+            option-label="label"
+            option-value="value"
+            class="w-full"
+          />
         </div>
         <div class="form-field">
           <label for="part-channel">采购渠道</label>
@@ -1130,6 +1213,16 @@ body {
   font-weight: 600;
 }
 
+.parts-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.priority-filter-dropdown {
+  min-width: 140px;
+}
+
 .game-list {
   list-style: none;
   margin: 0;
@@ -1163,6 +1256,17 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+}
+
+.game-tags {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.high-priority-tag {
+  font-weight: 600;
 }
 
 .game-name {

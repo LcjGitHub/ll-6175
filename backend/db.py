@@ -40,6 +40,8 @@ def init_db() -> None:
                 replacement_plan TEXT NOT NULL,
                 cost REAL NOT NULL DEFAULT 0,
                 completion_date TEXT,
+                priority TEXT NOT NULL DEFAULT '中'
+                    CHECK(priority IN ('高', '中', '低')),
                 FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
                 FOREIGN KEY (channel_id) REFERENCES purchase_channels(id) ON DELETE SET NULL
             );
@@ -68,7 +70,7 @@ def init_db() -> None:
 
 
 def _migrate_missing_parts(conn: sqlite3.Connection) -> None:
-    """为已有数据库添加 channel_id 列。"""
+    """为已有数据库添加缺失的列。"""
     columns = conn.execute(
         "PRAGMA table_info(missing_parts)"
     ).fetchall()
@@ -76,6 +78,10 @@ def _migrate_missing_parts(conn: sqlite3.Connection) -> None:
     if "channel_id" not in col_names:
         conn.execute(
             "ALTER TABLE missing_parts ADD COLUMN channel_id INTEGER REFERENCES purchase_channels(id) ON DELETE SET NULL"
+        )
+    if "priority" not in col_names:
+        conn.execute(
+            "ALTER TABLE missing_parts ADD COLUMN priority TEXT NOT NULL DEFAULT '中' CHECK(priority IN ('高', '中', '低'))"
         )
 
 
@@ -101,16 +107,16 @@ def _seed(conn: sqlite3.Connection) -> None:
     ]
     parts = [
         [
-            ("红色道路板块", "淘宝补购原装配件", 28.5, "2025-03-12", channel_ids[0]),
-            ("六面骰", "3D 打印替代件", 5.0, None, channel_ids[1]),
+            ("红色道路板块", "淘宝补购原装配件", 28.5, "2025-03-12", channel_ids[0], "高"),
+            ("六面骰", "3D 打印替代件", 5.0, None, channel_ids[1], "低"),
         ],
         [
-            ("绿色宝石代币", "通用玻璃筹码替代", 15.0, "2025-01-20", channel_ids[2]),
-            ("卡牌套", "标准 57×89mm 牌套", 32.0, "2025-02-08", channel_ids[2]),
+            ("绿色宝石代币", "通用玻璃筹码替代", 15.0, "2025-01-20", channel_ids[2], "中"),
+            ("卡牌套", "标准 57×89mm 牌套", 32.0, "2025-02-08", channel_ids[2], "高"),
         ],
         [
-            ("预言家角色牌", "高清扫描重印", 2.0, "2024-11-05", None),
-            ("法官锤", "木质迷你锤替代", 18.0, None, channel_ids[1]),
+            ("预言家角色牌", "高清扫描重印", 2.0, "2024-11-05", None, "高"),
+            ("法官锤", "木质迷你锤替代", 18.0, None, channel_ids[1], "中"),
         ],
     ]
 
@@ -120,8 +126,8 @@ def _seed(conn: sqlite3.Connection) -> None:
         conn.executemany(
             """
             INSERT INTO missing_parts
-                (game_id, accessory, replacement_plan, cost, completion_date, channel_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (game_id, accessory, replacement_plan, cost, completion_date, channel_id, priority)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             [(game_id, *p) for p in game_parts],
         )

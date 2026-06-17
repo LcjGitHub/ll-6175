@@ -39,7 +39,8 @@ def list_games():
         rows = conn.execute(
             """
             SELECT g.*,
-                   COUNT(mp.id) AS part_count
+                   COUNT(mp.id) AS part_count,
+                   SUM(CASE WHEN mp.priority = '高' THEN 1 ELSE 0 END) AS high_priority_count
             FROM games g
             LEFT JOIN missing_parts mp ON mp.game_id = g.id
             GROUP BY g.id
@@ -265,7 +266,8 @@ def get_stats_summary():
 
 @app.get("/api/games/<int:game_id>/parts")
 def list_parts(game_id: int):
-    """获取指定游戏的缺件列表（包含渠道名称）。"""
+    """获取指定游戏的缺件列表（包含渠道名称），支持按优先级筛选。"""
+    priority = request.args.get("priority", "").strip()
     with get_connection() as conn:
         game = conn.execute(
             "SELECT * FROM games WHERE id = ?", (game_id,)
@@ -273,16 +275,28 @@ def list_parts(game_id: int):
         if not game:
             return jsonify({"error": "游戏不存在"}), 404
 
+        params = [game_id]
+        where = ""
+        if priority in ("高", "中", "低"):
+            where = "AND mp.priority = ?"
+            params.append(priority)
+
         rows = conn.execute(
-            """
+            f"""
             SELECT mp.*,
                    c.name AS channel_name
             FROM missing_parts mp
             LEFT JOIN purchase_channels c ON c.id = mp.channel_id
-            WHERE mp.game_id = ?
-            ORDER BY mp.id
+            WHERE mp.game_id = ? {where}
+            ORDER BY
+                CASE mp.priority
+                    WHEN '高' THEN 1
+                    WHEN '中' THEN 2
+                    WHEN '低' THEN 3
+                END,
+                mp.id
             """,
-            (game_id,),
+            params,
         ).fetchall()
 
     return jsonify([row_to_dict(r) for r in rows])
@@ -297,11 +311,14 @@ def create_part(game_id: int):
     cost = data.get("cost", 0)
     completion_date = data.get("completion_date") or None
     channel_id = data.get("channel_id") or None
+    priority = (data.get("priority") or "中").strip()
 
     if not accessory:
         return jsonify({"error": "配件名称不能为空"}), 400
     if not replacement_plan:
         return jsonify({"error": "替换方案不能为空"}), 400
+    if priority not in ("高", "中", "低"):
+        return jsonify({"error": "优先级必须是高、中、低之一"}), 400
 
     try:
         cost = float(cost)
@@ -331,10 +348,10 @@ def create_part(game_id: int):
         cur = conn.execute(
             """
             INSERT INTO missing_parts
-                (game_id, accessory, replacement_plan, cost, completion_date, channel_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (game_id, accessory, replacement_plan, cost, completion_date, channel_id, priority)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (game_id, accessory, replacement_plan, cost, completion_date, channel_id),
+            (game_id, accessory, replacement_plan, cost, completion_date, channel_id, priority),
         )
         write_log(conn, "新增缺件", accessory, f"所属游戏：{game['name']}")
         conn.commit()
@@ -361,11 +378,14 @@ def update_part(part_id: int):
     cost = data.get("cost", 0)
     completion_date = data.get("completion_date") or None
     channel_id = data.get("channel_id") if "channel_id" in data else None
+    priority = (data.get("priority") or "中").strip() if "priority" in data else None
 
     if not accessory:
         return jsonify({"error": "配件名称不能为空"}), 400
     if not replacement_plan:
         return jsonify({"error": "替换方案不能为空"}), 400
+    if priority is not None and priority not in ("高", "中", "低"):
+        return jsonify({"error": "优先级必须是高、中、低之一"}), 400
 
     try:
         cost = float(cost)
@@ -401,14 +421,20 @@ def update_part(part_id: int):
             if not channel:
                 return jsonify({"error": "渠道不存在"}), 404
 
-        result = conn.execute(
+        if priority is not None:
+            set_clause = """
+            UPDATE missing_parts
+            SET accessory = ?, replacement_plan = ?, cost = ?, completion_date = ?, channel_id = ?, priority = ?
+            WHERE id = ?
             """
+            result = conn.execute(set_clause, (accessory, replacement_plan, cost, completion_date, channel_id, priority, part_id))
+        else:
+            set_clause = """
             UPDATE missing_parts
             SET accessory = ?, replacement_plan = ?, cost = ?, completion_date = ?, channel_id = ?
             WHERE id = ?
-            """,
-            (accessory, replacement_plan, cost, completion_date, channel_id, part_id),
-        )
+            """
+            result = conn.execute(set_clause, (accessory, replacement_plan, cost, completion_date, channel_id, part_id))
         if result.rowcount == 0:
             return jsonify({"error": "缺件记录不存在"}), 404
 
@@ -429,6 +455,8 @@ def update_part(part_id: int):
             new_ch_row = conn.execute("SELECT name FROM purchase_channels WHERE id = ?", (channel_id,)).fetchone() if channel_id else None
             new_ch_name = new_ch_row["name"] if new_ch_row else "未指定"
             changes.append(f"采购渠道：{old_ch_name} → {new_ch_name}")
+        if priority is not None and old["priority"] != priority:
+            changes.append(f"优先级：{old['priority']} → {priority}")
 
         summary = "；".join(changes) if changes else "无变更"
         write_log(conn, "修改缺件", accessory, f"所属游戏：{old['game_name']}；{summary}")
@@ -520,7 +548,7 @@ def export_backup():
             for r in conn.execute(
                 """
                 SELECT id, game_id, channel_id, accessory, replacement_plan,
-                       cost, completion_date
+                       cost, completion_date, priority
                 FROM missing_parts
                 ORDER BY id
                 """
@@ -752,6 +780,9 @@ def import_backup():
                 replacement_plan = p["replacement_plan"].strip()
                 cost = float(p.get("cost", 0) or 0)
                 completion_date = p.get("completion_date") or None
+                priority = p.get("priority", "中")
+                if priority not in ("高", "中", "低"):
+                    priority = "中"
 
                 old_channel_id = p.get("channel_id")
                 new_channel_id = old_channel_id_to_new.get(old_channel_id) if old_channel_id is not None else None
@@ -771,10 +802,10 @@ def import_backup():
                 conn.execute(
                     """
                     INSERT INTO missing_parts
-                        (game_id, channel_id, accessory, replacement_plan, cost, completion_date)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                        (game_id, channel_id, accessory, replacement_plan, cost, completion_date, priority)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (new_game_id, new_channel_id, accessory, replacement_plan, cost, completion_date),
+                    (new_game_id, new_channel_id, accessory, replacement_plan, cost, completion_date, priority),
                 )
                 inserted_parts += 1
 
