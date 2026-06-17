@@ -157,7 +157,15 @@ async function loadParts() {
   }
   loadingParts.value = true
   try {
-    parts.value = await partApi.list(selectedGame.value.id, priorityFilter.value || undefined)
+    const data = await partApi.list(selectedGame.value.id, priorityFilter.value || undefined)
+    parts.value = data
+    if (!priorityFilter.value) {
+      parts.value = [...data].sort((a, b) => {
+        const rankA = a.priority === '高' ? 1 : a.priority === '中' ? 2 : 3
+        const rankB = b.priority === '高' ? 1 : b.priority === '中' ? 2 : 3
+        return rankA - rankB
+      })
+    }
   } catch (err) {
     showError(err, '加载缺件列表失败')
   } finally {
@@ -693,7 +701,7 @@ watch(activeTab, (val) => {
                     <Tag :value="`${game.part_count ?? 0} 条缺件`" severity="secondary" />
                     <Tag
                       v-if="(game.high_priority_count ?? 0) > 0"
-                      :value="`${game.high_priority_count} 高优`"
+                      :value="`${game.high_priority_count} 条高优先级`"
                       severity="danger"
                       class="high-priority-tag"
                     />
@@ -762,8 +770,6 @@ watch(activeTab, (val) => {
               :rows="10"
               data-key="id"
               class="parts-table"
-              sort-field="priority"
-              :sort-order="1"
             >
               <Column field="accessory" header="配件" sortable />
               <Column field="priority" header="优先级" sortable :sortFunction="prioritySortFunction">

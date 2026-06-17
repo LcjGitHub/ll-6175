@@ -675,6 +675,12 @@ def _validate_backup_structure(data: dict) -> list[str]:
                     datetime.strptime(val, "%Y-%m-%d")
                 except ValueError:
                     errors.append(f"{pos}完成日期不是有效的日期（{val}）")
+        if "priority" in p:
+            val = p["priority"]
+            if not isinstance(val, str):
+                errors.append(f"{pos}优先级必须是字符串")
+            elif val not in ("高", "中", "低"):
+                errors.append(f"{pos}优先级取值不合法，必须是高、中、低之一")
 
     return errors
 
@@ -781,8 +787,6 @@ def import_backup():
                 cost = float(p.get("cost", 0) or 0)
                 completion_date = p.get("completion_date") or None
                 priority = p.get("priority", "中")
-                if priority not in ("高", "中", "低"):
-                    priority = "中"
 
                 old_channel_id = p.get("channel_id")
                 new_channel_id = old_channel_id_to_new.get(old_channel_id) if old_channel_id is not None else None
