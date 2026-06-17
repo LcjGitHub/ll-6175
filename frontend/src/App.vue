@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useConfirm } from 'primevue/useconfirm'
 
@@ -69,9 +69,6 @@ const logFilterOptions = [
   { label: '新增缺件', value: '新增缺件' },
   { label: '修改缺件', value: '修改缺件' },
   { label: '删除缺件', value: '删除缺件' },
-  { label: '新增渠道', value: '新增渠道' },
-  { label: '修改渠道', value: '修改渠道' },
-  { label: '删除渠道', value: '删除渠道' },
 ]
 
 /** @param {unknown} err */
@@ -390,6 +387,12 @@ onMounted(() => {
   loadStats()
   loadChannels()
   loadLogs()
+})
+
+watch(activeTab, (val) => {
+  if (val === 2) {
+    loadLogs()
+  }
 })
 </script>
 

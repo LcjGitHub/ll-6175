@@ -55,7 +55,7 @@ def create_game():
     try:
         with get_connection() as conn:
             cur = conn.execute("INSERT INTO games (name) VALUES (?)", (name,))
-            write_log(conn, "新增游戏", name)
+            write_log(conn, "新增游戏", name, f"游戏：{name}")
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM games WHERE id = ?", (cur.lastrowid,)
@@ -150,7 +150,6 @@ def create_channel():
                 "INSERT INTO purchase_channels (name, contact, remark) VALUES (?, ?, ?)",
                 (name, contact, remark),
             )
-            write_log(conn, "新增渠道", name)
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM purchase_channels WHERE id = ?", (cur.lastrowid,)
@@ -186,7 +185,6 @@ def update_channel(channel_id: int):
             )
             if result.rowcount == 0:
                 return jsonify({"error": "渠道不存在"}), 404
-            write_log(conn, "修改渠道", name, f"{old_name} → {name}")
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM purchase_channels WHERE id = ?", (channel_id,)
@@ -206,7 +204,6 @@ def delete_channel(channel_id: int):
         ).fetchone()
         if not channel:
             return jsonify({"error": "渠道不存在"}), 404
-        write_log(conn, "删除渠道", channel["name"])
         conn.execute(
             "DELETE FROM purchase_channels WHERE id = ?", (channel_id,)
         )
@@ -314,7 +311,7 @@ def create_part(game_id: int):
 
     with get_connection() as conn:
         game = conn.execute(
-            "SELECT id FROM games WHERE id = ?", (game_id,)
+            "SELECT id, name FROM games WHERE id = ?", (game_id,)
         ).fetchone()
         if not game:
             return jsonify({"error": "游戏不存在"}), 404
@@ -334,7 +331,7 @@ def create_part(game_id: int):
             """,
             (game_id, accessory, replacement_plan, cost, completion_date, channel_id),
         )
-        write_log(conn, "新增缺件", accessory, f"游戏ID={game_id}")
+        write_log(conn, "新增缺件", accessory, f"所属游戏：{game['name']}")
         conn.commit()
         row = conn.execute(
             """
@@ -379,6 +376,19 @@ def update_part(part_id: int):
         channel_id = None
 
     with get_connection() as conn:
+        old = conn.execute(
+            """
+            SELECT mp.*, c.name AS channel_name, g.name AS game_name
+            FROM missing_parts mp
+            LEFT JOIN purchase_channels c ON c.id = mp.channel_id
+            LEFT JOIN games g ON g.id = mp.game_id
+            WHERE mp.id = ?
+            """,
+            (part_id,),
+        ).fetchone()
+        if not old:
+            return jsonify({"error": "缺件记录不存在"}), 404
+
         if channel_id is not None:
             channel = conn.execute(
                 "SELECT id FROM purchase_channels WHERE id = ?", (channel_id,)
@@ -396,7 +406,27 @@ def update_part(part_id: int):
         )
         if result.rowcount == 0:
             return jsonify({"error": "缺件记录不存在"}), 404
-        write_log(conn, "修改缺件", accessory)
+
+        changes = []
+        if old["accessory"] != accessory:
+            changes.append(f"配件：{old['accessory']} → {accessory}")
+        if old["replacement_plan"] != replacement_plan:
+            changes.append(f"替换方案：{old['replacement_plan']} → {replacement_plan}")
+        if float(old["cost"]) != cost:
+            changes.append(f"成本：{old['cost']} → {cost}")
+        old_date = old["completion_date"] or ""
+        new_date = completion_date or ""
+        if old_date != new_date:
+            changes.append(f"完成日期：{old['completion_date'] or '未完成'} → {completion_date or '未完成'}")
+        old_ch = old["channel_id"]
+        if (old_ch is None and channel_id is not None) or (old_ch is not None and channel_id is None) or (old_ch is not None and channel_id is not None and old_ch != channel_id):
+            old_ch_name = old["channel_name"] or "未指定"
+            new_ch_row = conn.execute("SELECT name FROM purchase_channels WHERE id = ?", (channel_id,)).fetchone() if channel_id else None
+            new_ch_name = new_ch_row["name"] if new_ch_row else "未指定"
+            changes.append(f"采购渠道：{old_ch_name} → {new_ch_name}")
+
+        summary = "；".join(changes) if changes else "无变更"
+        write_log(conn, "修改缺件", accessory, f"所属游戏：{old['game_name']}；{summary}")
         conn.commit()
         row = conn.execute(
             """
@@ -417,11 +447,17 @@ def delete_part(part_id: int):
     """删除缺件记录。"""
     with get_connection() as conn:
         part = conn.execute(
-            "SELECT accessory FROM missing_parts WHERE id = ?", (part_id,)
+            """
+            SELECT mp.accessory, g.name AS game_name
+            FROM missing_parts mp
+            JOIN games g ON g.id = mp.game_id
+            WHERE mp.id = ?
+            """,
+            (part_id,),
         ).fetchone()
         if not part:
             return jsonify({"error": "缺件记录不存在"}), 404
-        write_log(conn, "删除缺件", part["accessory"])
+        write_log(conn, "删除缺件", part["accessory"], f"所属游戏：{part['game_name']}")
         conn.execute(
             "DELETE FROM missing_parts WHERE id = ?", (part_id,)
         )
