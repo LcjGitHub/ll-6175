@@ -318,8 +318,8 @@ def get_game_summary(game_id: int):
             """
             SELECT
                 COUNT(*) AS total_parts,
-                SUM(CASE WHEN completion_date IS NOT NULL THEN 1 ELSE 0 END) AS completed_parts,
-                SUM(CASE WHEN completion_date IS NULL THEN 1 ELSE 0 END) AS pending_parts,
+                COALESCE(SUM(CASE WHEN completion_date IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed_parts,
+                COALESCE(SUM(CASE WHEN completion_date IS NULL THEN 1 ELSE 0 END), 0) AS pending_parts,
                 COALESCE(SUM(cost), 0) AS total_cost
             FROM missing_parts
             WHERE game_id = ?

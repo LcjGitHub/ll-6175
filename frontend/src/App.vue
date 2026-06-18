@@ -226,6 +226,8 @@ function selectGame(game) {
   priorityFilter.value = ''
   statusFilter.value = ''
   keywordSearch.value = ''
+  gameSummary.value = null
+  loadingGameSummary.value = true
   loadParts()
   loadGameSummary()
 }
@@ -864,39 +866,40 @@ watch(activeTab, (val) => {
               请从左侧选择一个桌游
             </div>
 
-            <div v-else-if="!loadingParts && parts.length === 0 && (statusFilter || priorityFilter || keywordSearch)" class="empty-hint large">
-              <i class="pi pi-filter" />
-              暂无匹配缺件
-            </div>
-
             <template v-else>
-              <div v-if="selectedGame && gameSummary" class="game-summary-bar">
+              <div v-if="selectedGame" class="game-summary-bar">
                 <div class="summary-item">
                   <i class="pi pi-list-check summary-icon" />
                   <span class="summary-label">缺件总数</span>
-                  <span class="summary-value">{{ loadingGameSummary ? '—' : gameSummary.total_parts }}</span>
+                  <span class="summary-value">{{ loadingGameSummary ? '—' : gameSummary?.total_parts ?? 0 }}</span>
                 </div>
                 <div class="summary-divider" />
                 <div class="summary-item">
                   <i class="pi pi-check-circle summary-icon completed" />
-                  <span class="summary-label">已完成</span>
-                  <span class="summary-value completed">{{ loadingGameSummary ? '—' : gameSummary.completed_parts }}</span>
+                  <span class="summary-label">已替换完成</span>
+                  <span class="summary-value completed">{{ loadingGameSummary ? '—' : gameSummary?.completed_parts ?? 0 }}</span>
                 </div>
                 <div class="summary-divider" />
                 <div class="summary-item">
                   <i class="pi pi-clock summary-icon pending" />
                   <span class="summary-label">未完成</span>
-                  <span class="summary-value pending">{{ loadingGameSummary ? '—' : gameSummary.pending_parts }}</span>
+                  <span class="summary-value pending">{{ loadingGameSummary ? '—' : gameSummary?.pending_parts ?? 0 }}</span>
                 </div>
                 <div class="summary-divider" />
                 <div class="summary-item">
                   <i class="pi pi-wallet summary-icon cost" />
                   <span class="summary-label">总花费</span>
-                  <span class="summary-value cost">¥{{ loadingGameSummary ? '—' : Number(gameSummary.total_cost).toFixed(2) }}</span>
+                  <span class="summary-value cost">¥{{ loadingGameSummary ? '—' : Number(gameSummary?.total_cost ?? 0).toFixed(2) }}</span>
                 </div>
               </div>
 
+              <div v-if="!loadingParts && parts.length === 0 && (statusFilter || priorityFilter || keywordSearch)" class="empty-hint large">
+                <i class="pi pi-filter" />
+                暂无匹配缺件
+              </div>
+
               <DataTable
+              v-else
               :value="parts"
               :loading="loadingParts"
               striped-rows
