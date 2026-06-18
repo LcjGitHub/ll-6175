@@ -100,6 +100,8 @@ const priorityEditOptions = [
   { label: '低', value: '低' },
 ]
 
+const completingPartId = ref(null)
+
 const logs = ref([])
 const loadingLogs = ref(false)
 const logFilter = ref('')
@@ -520,8 +522,10 @@ function confirmDeletePart(part) {
 }
 
 async function completePart(part) {
+  if (completingPartId.value) return
   const today = new Date()
   const dateStr = formatDate(today)
+  completingPartId.value = part.id
   try {
     await partApi.update(part.id, {
       accessory: part.accessory,
@@ -541,6 +545,8 @@ async function completePart(part) {
     await loadLogs()
   } catch (err) {
     showError(err, '标记完成失败')
+  } finally {
+    completingPartId.value = null
   }
 }
 
@@ -995,16 +1001,22 @@ watch(activeTab, (val) => {
               </Column>
               <Column header="操作" style="width: 12rem">
                 <template #body="{ data }">
-                  <Button
+                  <span
                     v-if="!data.completion_date"
-                    icon="pi pi-check"
-                    text
-                    rounded
-                    severity="success"
-                    size="small"
-                    tooltip="一键完成"
-                    @click="completePart(data)"
-                  />
+                    v-tooltip="'一键完成'"
+                    class="action-btn-wrapper"
+                  >
+                    <Button
+                      icon="pi pi-check"
+                      text
+                      rounded
+                      severity="success"
+                      size="small"
+                      :loading="completingPartId === data.id"
+                      :disabled="completingPartId === data.id"
+                      @click="completePart(data)"
+                    />
+                  </span>
                   <Button
                     icon="pi pi-pencil"
                     text

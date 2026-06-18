@@ -485,7 +485,7 @@ def update_part(part_id: int):
     if priority is not None and priority not in ("高", "中", "低"):
         return jsonify({"error": "优先级必须是高、中、低之一"}), 400
     if completion_date is not None and not _validate_date_str(completion_date):
-        return jsonify({"error": "完成日期格式不合法，应为 YYYY-MM-DD"}), 400
+        return jsonify({"error": "完成日期格式不合法，请按照年-月-日格式填写，年份四位、月份两位、日期两位"}), 400
 
     try:
         cost = float(cost)
