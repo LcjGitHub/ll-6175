@@ -33,7 +33,7 @@ const stats = ref(null)
 const loadingStats = ref(false)
 
 const gameDialog = ref(false)
-const gameForm = ref({ id: null, name: '' })
+const gameForm = ref({ id: null, name: '', publisher: '', purchase_year: null })
 
 const partDialog = ref(false)
 const partForm = ref({
@@ -181,8 +181,13 @@ function selectGame(game) {
 
 function openGameDialog(game = null) {
   gameForm.value = game
-    ? { id: game.id, name: game.name }
-    : { id: null, name: '' }
+    ? {
+        id: game.id,
+        name: game.name,
+        publisher: game.publisher || '',
+        purchase_year: game.purchase_year || null,
+      }
+    : { id: null, name: '', publisher: '', purchase_year: null }
   gameDialog.value = true
 }
 
@@ -192,12 +197,17 @@ async function saveGame() {
     toast.add({ severity: 'warn', summary: '提示', detail: '请输入游戏名称', life: 3000 })
     return
   }
+  const payload = {
+    name,
+    publisher: gameForm.value.publisher.trim() || undefined,
+    purchase_year: gameForm.value.purchase_year || undefined,
+  }
   try {
     if (gameForm.value.id) {
-      await gameApi.update(gameForm.value.id, { name })
+      await gameApi.update(gameForm.value.id, payload)
       toast.add({ severity: 'success', summary: '成功', detail: '游戏已更新', life: 2000 })
     } else {
-      await gameApi.create({ name })
+      await gameApi.create(payload)
       toast.add({ severity: 'success', summary: '成功', detail: '游戏已添加', life: 2000 })
     }
     gameDialog.value = false
@@ -697,6 +707,7 @@ watch(activeTab, (val) => {
               >
                 <div class="game-info">
                   <span class="game-name">{{ game.name }}</span>
+                  <span v-if="game.publisher" class="game-publisher">{{ game.publisher }}</span>
                   <div class="game-tags">
                     <Tag :value="`${game.part_count ?? 0} 条缺件`" severity="secondary" />
                     <Tag
@@ -733,7 +744,7 @@ watch(activeTab, (val) => {
           <main class="panel parts-panel">
             <div class="panel-header">
               <h2>
-                {{ selectedGame ? `「${selectedGame.name}」缺件详情` : '缺件详情' }}
+                {{ selectedGame ? `「${selectedGame.name}」${selectedGame.purchase_year ? `（${selectedGame.purchase_year}年购入）` : ''}缺件详情` : '缺件详情' }}
               </h2>
               <div class="parts-header-actions">
                 <Dropdown
@@ -945,11 +956,35 @@ watch(activeTab, (val) => {
       v-model:visible="gameDialog"
       :header="gameForm.id ? '编辑游戏' : '新增游戏'"
       modal
-      :style="{ width: '24rem' }"
+      :style="{ width: '28rem' }"
     >
-      <div class="form-field">
-        <label for="game-name">游戏名称</label>
-        <InputText id="game-name" v-model="gameForm.name" autofocus class="w-full" />
+      <div class="form-stack">
+        <div class="form-field">
+          <label for="game-name">游戏名称 *</label>
+          <InputText id="game-name" v-model="gameForm.name" autofocus class="w-full" />
+        </div>
+        <div class="form-field">
+          <label for="game-publisher">出版商</label>
+          <InputText
+            id="game-publisher"
+            v-model="gameForm.publisher"
+            placeholder="例如：Kosmos、Asmodee"
+            class="w-full"
+          />
+        </div>
+        <div class="form-field">
+          <label for="game-purchase-year">购入年份</label>
+          <InputNumber
+            id="game-purchase-year"
+            v-model="gameForm.purchase_year"
+            :min="1900"
+            :max="2100"
+            placeholder="例如：2024"
+            use-grouping="false"
+            show-buttons
+            class="w-full"
+          />
+        </div>
       </div>
       <template #footer>
         <Button label="取消" text @click="gameDialog = false" />
@@ -1277,6 +1312,11 @@ body {
 
 .game-name {
   font-weight: 500;
+}
+
+.game-publisher {
+  font-size: 0.8rem;
+  color: #64748b;
 }
 
 .game-actions {

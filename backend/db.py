@@ -22,7 +22,9 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS games (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE
+                name TEXT NOT NULL UNIQUE,
+                publisher TEXT,
+                purchase_year INTEGER
             );
 
             CREATE TABLE IF NOT EXISTS purchase_channels (
@@ -57,6 +59,7 @@ def init_db() -> None:
         )
 
         _migrate_missing_parts(conn)
+        _migrate_games(conn)
 
         game_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
         if game_count == 0:
@@ -85,6 +88,18 @@ def _migrate_missing_parts(conn: sqlite3.Connection) -> None:
         )
 
 
+def _migrate_games(conn: sqlite3.Connection) -> None:
+    """为已有 games 表添加 publisher 和 purchase_year 列。"""
+    columns = conn.execute(
+        "PRAGMA table_info(games)"
+    ).fetchall()
+    col_names = [col["name"] for col in columns]
+    if "publisher" not in col_names:
+        conn.execute("ALTER TABLE games ADD COLUMN publisher TEXT")
+    if "purchase_year" not in col_names:
+        conn.execute("ALTER TABLE games ADD COLUMN purchase_year INTEGER")
+
+
 def _seed(conn: sqlite3.Connection) -> None:
     """写入 3 个游戏，各 2 条缺件记录及示例采购渠道。"""
     channels = [
@@ -101,9 +116,9 @@ def _seed(conn: sqlite3.Connection) -> None:
         channel_ids.append(cur.lastrowid)
 
     games = [
-        "卡坦岛",
-        "璀璨宝石",
-        "狼人杀",
+        ("卡坦岛", "Kosmos", 2023),
+        ("璀璨宝石", "Space Cowboys", 2022),
+        ("狼人杀", "Asmodee", 2021),
     ]
     parts = [
         [
@@ -120,8 +135,11 @@ def _seed(conn: sqlite3.Connection) -> None:
         ],
     ]
 
-    for name, game_parts in zip(games, parts):
-        cur = conn.execute("INSERT INTO games (name) VALUES (?)", (name,))
+    for (name, publisher, purchase_year), game_parts in zip(games, parts):
+        cur = conn.execute(
+            "INSERT INTO games (name, publisher, purchase_year) VALUES (?, ?, ?)",
+            (name, publisher, purchase_year),
+        )
         game_id = cur.lastrowid
         conn.executemany(
             """

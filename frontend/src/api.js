@@ -9,6 +9,8 @@ const api = axios.create({
  * @typedef {Object} Game
  * @property {number} id
  * @property {string} name
+ * @property {string|null} publisher
+ * @property {number|null} purchase_year
  * @property {number} [part_count]
  */
 
@@ -38,10 +40,10 @@ export const gameApi = {
   /** @returns {Promise<Game[]>} */
   list: () => api.get('/games').then((r) => r.data),
 
-  /** @param {{ name: string }} data */
+  /** @param {{ name: string, publisher?: string, purchase_year?: number|null }} data */
   create: (data) => api.post('/games', data).then((r) => r.data),
 
-  /** @param {number} id @param {{ name: string }} data */
+  /** @param {number} id @param {{ name: string, publisher?: string, purchase_year?: number|null }} data */
   update: (id, data) => api.put(`/games/${id}`, data).then((r) => r.data),
 
   /** @param {number} id */

@@ -55,13 +55,31 @@ def create_game():
     """新建桌游。"""
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
+    publisher = (data.get("publisher") or "").strip() or None
+    purchase_year = data.get("purchase_year")
     if not name:
         return jsonify({"error": "游戏名称不能为空"}), 400
 
+    if purchase_year is not None and purchase_year != "":
+        try:
+            purchase_year = int(purchase_year)
+        except (TypeError, ValueError):
+            return jsonify({"error": "购入年份必须是数字"}), 400
+    else:
+        purchase_year = None
+
     try:
         with get_connection() as conn:
-            cur = conn.execute("INSERT INTO games (name) VALUES (?)", (name,))
-            write_log(conn, "新增游戏", name, f"游戏：{name}")
+            cur = conn.execute(
+                "INSERT INTO games (name, publisher, purchase_year) VALUES (?, ?, ?)",
+                (name, publisher, purchase_year),
+            )
+            detail = f"游戏：{name}"
+            if publisher:
+                detail += f"，出版商：{publisher}"
+            if purchase_year:
+                detail += f"，购入年份：{purchase_year}"
+            write_log(conn, "新增游戏", name, detail)
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM games WHERE id = ?", (cur.lastrowid,)
@@ -74,26 +92,48 @@ def create_game():
 
 @app.put("/api/games/<int:game_id>")
 def update_game(game_id: int):
-    """更新桌游名称。"""
+    """更新桌游信息。"""
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
+    publisher = (data.get("publisher") or "").strip() or None
+    purchase_year = data.get("purchase_year")
     if not name:
         return jsonify({"error": "游戏名称不能为空"}), 400
+
+    if purchase_year is not None and purchase_year != "":
+        try:
+            purchase_year = int(purchase_year)
+        except (TypeError, ValueError):
+            return jsonify({"error": "购入年份必须是数字"}), 400
+    else:
+        purchase_year = None
 
     try:
         with get_connection() as conn:
             old = conn.execute(
-                "SELECT name FROM games WHERE id = ?", (game_id,)
+                "SELECT name, publisher, purchase_year FROM games WHERE id = ?", (game_id,)
             ).fetchone()
             if not old:
                 return jsonify({"error": "游戏不存在"}), 404
             old_name = old["name"]
+            old_publisher = old["publisher"]
+            old_purchase_year = old["purchase_year"]
             result = conn.execute(
-                "UPDATE games SET name = ? WHERE id = ?", (name, game_id)
+                "UPDATE games SET name = ?, publisher = ?, purchase_year = ? WHERE id = ?",
+                (name, publisher, purchase_year, game_id),
             )
             if result.rowcount == 0:
                 return jsonify({"error": "游戏不存在"}), 404
-            write_log(conn, "修改游戏", name, f"{old_name} → {name}")
+
+            changes = []
+            if old_name != name:
+                changes.append(f"{old_name} → {name}")
+            if (old_publisher or "") != (publisher or ""):
+                changes.append(f"出版商：{old_publisher or '未设置'} → {publisher or '未设置'}")
+            if old_purchase_year != purchase_year:
+                changes.append(f"购入年份：{old_purchase_year or '未设置'} → {purchase_year or '未设置'}")
+
+            write_log(conn, "修改游戏", name, "；".join(changes) if changes else "无变更")
             conn.commit()
             row = conn.execute(
                 "SELECT * FROM games WHERE id = ?", (game_id,)
@@ -536,7 +576,7 @@ BACKUP_VERSION = "1.0"
 def export_backup():
     """导出全部游戏、采购渠道和缺件数据为结构化 JSON 文件。"""
     with get_connection() as conn:
-        games = [row_to_dict(r) for r in conn.execute("SELECT id, name FROM games ORDER BY id").fetchall()]
+        games = [row_to_dict(r) for r in conn.execute("SELECT id, name, publisher, purchase_year FROM games ORDER BY id").fetchall()]
         channels = [
             row_to_dict(r)
             for r in conn.execute(
@@ -736,14 +776,30 @@ def import_backup():
             # 导入游戏
             for g in src_games:
                 name = g["name"].strip()
+                publisher = (g.get("publisher") or "").strip() or None
+                purchase_year = g.get("purchase_year")
+                if purchase_year is not None and purchase_year != "":
+                    try:
+                        purchase_year = int(purchase_year)
+                    except (TypeError, ValueError):
+                        purchase_year = None
+                else:
+                    purchase_year = None
                 if mode == "merge":
                     existing = conn.execute(
                         "SELECT id FROM games WHERE name = ?", (name,)
                     ).fetchone()
                     if existing:
                         old_game_id_to_new[g.get("id")] = existing["id"]
+                        conn.execute(
+                            "UPDATE games SET publisher = ?, purchase_year = ? WHERE id = ?",
+                            (publisher, purchase_year, existing["id"]),
+                        )
                         continue
-                cur = conn.execute("INSERT INTO games (name) VALUES (?)", (name,))
+                cur = conn.execute(
+                    "INSERT INTO games (name, publisher, purchase_year) VALUES (?, ?, ?)",
+                    (name, publisher, purchase_year),
+                )
                 old_game_id_to_new[g.get("id")] = cur.lastrowid
                 inserted_games += 1
 
