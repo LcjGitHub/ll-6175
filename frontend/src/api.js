@@ -67,10 +67,12 @@ export const channelApi = {
 }
 
 export const partApi = {
-  /** @param {number} gameId @param {string} [priority] @returns {Promise<MissingPart[]>} */
-  list: (gameId, priority) => {
+  /** @param {number} gameId @param {string} [priority] @param {string} [status] @param {string} [keyword] @returns {Promise<MissingPart[]>} */
+  list: (gameId, priority, status, keyword) => {
     const params = {}
     if (priority) params.priority = priority
+    if (status) params.status = status
+    if (keyword) params.keyword = keyword
     return api.get(`/games/${gameId}/parts`, { params }).then((r) => r.data)
   },
 

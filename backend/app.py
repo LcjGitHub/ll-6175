@@ -310,8 +310,10 @@ def get_stats_summary():
 
 @app.get("/api/games/<int:game_id>/parts")
 def list_parts(game_id: int):
-    """获取指定游戏的缺件列表（包含渠道名称），支持按优先级筛选。"""
+    """获取指定游戏的缺件列表（包含渠道名称），支持按优先级、完成状态和配件名称关键字筛选。"""
     priority = request.args.get("priority", "").strip()
+    status = request.args.get("status", "").strip()
+    keyword = request.args.get("keyword", "").strip()
     with get_connection() as conn:
         game = conn.execute(
             "SELECT * FROM games WHERE id = ?", (game_id,)
@@ -320,10 +322,19 @@ def list_parts(game_id: int):
             return jsonify({"error": "游戏不存在"}), 404
 
         params = [game_id]
-        where = ""
+        where = []
         if priority in ("高", "中", "低"):
-            where = "AND mp.priority = ?"
+            where.append("mp.priority = ?")
             params.append(priority)
+        if status == "completed":
+            where.append("mp.completion_date IS NOT NULL")
+        elif status == "pending":
+            where.append("mp.completion_date IS NULL")
+        if keyword:
+            where.append("mp.accessory LIKE ?")
+            params.append(f"%{keyword}%")
+
+        where_clause = "AND " + " AND ".join(where) if where else ""
 
         rows = conn.execute(
             f"""
@@ -331,7 +342,7 @@ def list_parts(game_id: int):
                    c.name AS channel_name
             FROM missing_parts mp
             LEFT JOIN purchase_channels c ON c.id = mp.channel_id
-            WHERE mp.game_id = ? {where}
+            WHERE mp.game_id = ? {where_clause}
             ORDER BY
                 CASE mp.priority
                     WHEN '高' THEN 1

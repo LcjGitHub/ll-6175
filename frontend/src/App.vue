@@ -68,6 +68,15 @@ const priorityOptions = [
   { label: '中优先级', value: '中' },
   { label: '低优先级', value: '低' },
 ]
+
+const statusFilter = ref('')
+const statusOptions = [
+  { label: '全部状态', value: '' },
+  { label: '已完成', value: 'completed' },
+  { label: '未完成', value: 'pending' },
+]
+
+const keywordSearch = ref('')
 const priorityEditOptions = [
   { label: '高', value: '高' },
   { label: '中', value: '中' },
@@ -159,7 +168,12 @@ async function loadParts() {
   }
   loadingParts.value = true
   try {
-    const data = await partApi.list(selectedGame.value.id, priorityFilter.value || undefined)
+    const data = await partApi.list(
+      selectedGame.value.id,
+      priorityFilter.value || undefined,
+      statusFilter.value || undefined,
+      keywordSearch.value || undefined
+    )
     parts.value = data
     if (!priorityFilter.value) {
       parts.value = [...data].sort((a, b) => {
@@ -178,6 +192,8 @@ async function loadParts() {
 function selectGame(game) {
   selectedGame.value = game
   priorityFilter.value = ''
+  statusFilter.value = ''
+  keywordSearch.value = ''
   loadParts()
 }
 
@@ -763,6 +779,16 @@ watch(activeTab, (val) => {
               </h2>
               <div class="parts-header-actions">
                 <Dropdown
+                  v-model="statusFilter"
+                  :options="statusOptions"
+                  option-label="label"
+                  option-value="value"
+                  placeholder="筛选状态"
+                  show-clear
+                  class="status-filter-dropdown"
+                  @change="loadParts"
+                />
+                <Dropdown
                   v-model="priorityFilter"
                   :options="priorityOptions"
                   option-label="label"
@@ -772,6 +798,15 @@ watch(activeTab, (val) => {
                   class="priority-filter-dropdown"
                   @change="loadParts"
                 />
+                <span class="p-input-icon-left keyword-search-wrapper">
+                  <i class="pi pi-search" />
+                  <InputText
+                    v-model="keywordSearch"
+                    placeholder="搜索配件名称"
+                    class="keyword-search-input"
+                    @input="loadParts"
+                  />
+                </span>
                 <Button
                   v-if="selectedGame"
                   icon="pi pi-plus"
@@ -1323,6 +1358,19 @@ body {
 
 .priority-filter-dropdown {
   min-width: 140px;
+}
+
+.status-filter-dropdown {
+  min-width: 140px;
+}
+
+.keyword-search-wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.keyword-search-input {
+  min-width: 180px;
 }
 
 .game-list {
