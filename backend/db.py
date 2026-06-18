@@ -67,6 +67,8 @@ def init_db() -> None:
                 completion_date TEXT,
                 priority TEXT NOT NULL DEFAULT '中'
                     CHECK(priority IN ('高', '中', '低')),
+                note TEXT,
+                purchase_url TEXT,
                 FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
                 FOREIGN KEY (channel_id) REFERENCES purchase_channels(id) ON DELETE SET NULL
             );
@@ -110,6 +112,10 @@ def _migrate_missing_parts(conn: sqlite3.Connection) -> None:
         conn.execute(
             "ALTER TABLE missing_parts ADD COLUMN priority TEXT NOT NULL DEFAULT '中' CHECK(priority IN ('高', '中', '低'))"
         )
+    if "note" not in col_names:
+        conn.execute("ALTER TABLE missing_parts ADD COLUMN note TEXT")
+    if "purchase_url" not in col_names:
+        conn.execute("ALTER TABLE missing_parts ADD COLUMN purchase_url TEXT")
 
 
 def _migrate_games(conn: sqlite3.Connection) -> None:
@@ -146,16 +152,16 @@ def _seed(conn: sqlite3.Connection) -> None:
     ]
     parts = [
         [
-            ("红色道路板块", "淘宝补购原装配件", 28.5, "2025-03-12", channel_ids[0], "高"),
-            ("六面骰", "3D 打印替代件", 5.0, None, channel_ids[1], "低"),
+            ("红色道路板块", "淘宝补购原装配件", 28.5, "2025-03-12", channel_ids[0], "高", "原装红色道路板块，注意与现有版本色差", "https://item.taobao.com/item.htm?id=example1"),
+            ("六面骰", "3D 打印替代件", 5.0, None, channel_ids[1], "低", None, None),
         ],
         [
-            ("绿色宝石代币", "通用玻璃筹码替代", 15.0, "2025-01-20", channel_ids[2], "中"),
-            ("卡牌套", "标准 57×89mm 牌套", 32.0, "2025-02-08", channel_ids[2], "高"),
+            ("绿色宝石代币", "通用玻璃筹码替代", 15.0, "2025-01-20", channel_ids[2], "中", "玻璃材质，注意边缘打磨光滑", "https://mobile.yangkeduo.com/goods.html?goods_id=example2"),
+            ("卡牌套", "标准 57×89mm 牌套", 32.0, "2025-02-08", channel_ids[2], "高", None, None),
         ],
         [
-            ("预言家角色牌", "高清扫描重印", 2.0, "2024-11-05", None, "高"),
-            ("法官锤", "木质迷你锤替代", 18.0, None, channel_ids[1], "中"),
+            ("预言家角色牌", "高清扫描重印", 2.0, "2024-11-05", None, "高", "扫描分辨率需 300dpi 以上，双面彩印", None),
+            ("法官锤", "木质迷你锤替代", 18.0, None, channel_ids[1], "中", None, "https://item.taobao.com/item.htm?id=example3"),
         ],
     ]
 
@@ -168,8 +174,8 @@ def _seed(conn: sqlite3.Connection) -> None:
         conn.executemany(
             """
             INSERT INTO missing_parts
-                (game_id, accessory, replacement_plan, cost, completion_date, channel_id, priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (game_id, accessory, replacement_plan, cost, completion_date, channel_id, priority, note, purchase_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [(game_id, *p) for p in game_parts],
         )

@@ -34,6 +34,8 @@ const api = axios.create({
  * @property {number} cost
  * @property {string|null} completion_date
  * @property {'高'|'中'|'低'} priority
+ * @property {string|null} note
+ * @property {string|null} purchase_url
  */
 
 export const gameApi = {

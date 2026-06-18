@@ -356,6 +356,8 @@ def create_part(game_id: int):
     completion_date = data.get("completion_date") or None
     channel_id = data.get("channel_id") or None
     priority = (data.get("priority") or "中").strip()
+    note = (data.get("note") or "").strip() or None
+    purchase_url = (data.get("purchase_url") or "").strip() or None
 
     if not accessory:
         return jsonify({"error": "配件名称不能为空"}), 400
@@ -392,10 +394,10 @@ def create_part(game_id: int):
         cur = conn.execute(
             """
             INSERT INTO missing_parts
-                (game_id, accessory, replacement_plan, cost, completion_date, channel_id, priority)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (game_id, accessory, replacement_plan, cost, completion_date, channel_id, priority, note, purchase_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (game_id, accessory, replacement_plan, cost, completion_date, channel_id, priority),
+            (game_id, accessory, replacement_plan, cost, completion_date, channel_id, priority, note, purchase_url),
         )
         write_log(conn, "新增缺件", accessory, f"所属游戏：{game['name']}")
         conn.commit()
@@ -423,6 +425,8 @@ def update_part(part_id: int):
     completion_date = data.get("completion_date") or None
     channel_id = data.get("channel_id") if "channel_id" in data else None
     priority = (data.get("priority") or "中").strip() if "priority" in data else None
+    note = (data.get("note") or "").strip() or None
+    purchase_url = (data.get("purchase_url") or "").strip() or None
 
     if not accessory:
         return jsonify({"error": "配件名称不能为空"}), 400
@@ -468,17 +472,17 @@ def update_part(part_id: int):
         if priority is not None:
             set_clause = """
             UPDATE missing_parts
-            SET accessory = ?, replacement_plan = ?, cost = ?, completion_date = ?, channel_id = ?, priority = ?
+            SET accessory = ?, replacement_plan = ?, cost = ?, completion_date = ?, channel_id = ?, priority = ?, note = ?, purchase_url = ?
             WHERE id = ?
             """
-            result = conn.execute(set_clause, (accessory, replacement_plan, cost, completion_date, channel_id, priority, part_id))
+            result = conn.execute(set_clause, (accessory, replacement_plan, cost, completion_date, channel_id, priority, note, purchase_url, part_id))
         else:
             set_clause = """
             UPDATE missing_parts
-            SET accessory = ?, replacement_plan = ?, cost = ?, completion_date = ?, channel_id = ?
+            SET accessory = ?, replacement_plan = ?, cost = ?, completion_date = ?, channel_id = ?, note = ?, purchase_url = ?
             WHERE id = ?
             """
-            result = conn.execute(set_clause, (accessory, replacement_plan, cost, completion_date, channel_id, part_id))
+            result = conn.execute(set_clause, (accessory, replacement_plan, cost, completion_date, channel_id, note, purchase_url, part_id))
         if result.rowcount == 0:
             return jsonify({"error": "缺件记录不存在"}), 404
 
@@ -501,6 +505,14 @@ def update_part(part_id: int):
             changes.append(f"采购渠道：{old_ch_name} → {new_ch_name}")
         if priority is not None and old["priority"] != priority:
             changes.append(f"优先级：{old['priority']} → {priority}")
+        old_note = old["note"] or ""
+        new_note = note or ""
+        if old_note != new_note:
+            changes.append(f"备注：{old_note or '无'} → {new_note or '无'}")
+        old_url = old["purchase_url"] or ""
+        new_url = purchase_url or ""
+        if old_url != new_url:
+            changes.append(f"购买链接：{old_url or '无'} → {new_url or '无'}")
 
         summary = "；".join(changes) if changes else "无变更"
         write_log(conn, "修改缺件", accessory, f"所属游戏：{old['game_name']}；{summary}")
@@ -592,7 +604,7 @@ def export_backup():
             for r in conn.execute(
                 """
                 SELECT id, game_id, channel_id, accessory, replacement_plan,
-                       cost, completion_date, priority
+                       cost, completion_date, priority, note, purchase_url
                 FROM missing_parts
                 ORDER BY id
                 """
@@ -646,6 +658,8 @@ _FIELD_LABELS = {
     "contact": "联系方式",
     "remark": "备注",
     "channel_id": "采购渠道编号",
+    "note": "备注说明",
+    "purchase_url": "购买链接",
 }
 
 _SECTION_LABELS = {
@@ -847,6 +861,8 @@ def import_backup():
                 cost = float(p.get("cost", 0) or 0)
                 completion_date = p.get("completion_date") or None
                 priority = p.get("priority", "中")
+                note = (p.get("note") or "").strip() or None
+                purchase_url = (p.get("purchase_url") or "").strip() or None
 
                 old_channel_id = p.get("channel_id")
                 new_channel_id = old_channel_id_to_new.get(old_channel_id) if old_channel_id is not None else None
@@ -866,10 +882,10 @@ def import_backup():
                 conn.execute(
                     """
                     INSERT INTO missing_parts
-                        (game_id, channel_id, accessory, replacement_plan, cost, completion_date, priority)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (game_id, channel_id, accessory, replacement_plan, cost, completion_date, priority, note, purchase_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (new_game_id, new_channel_id, accessory, replacement_plan, cost, completion_date, priority),
+                    (new_game_id, new_channel_id, accessory, replacement_plan, cost, completion_date, priority, note, purchase_url),
                 )
                 inserted_parts += 1
 

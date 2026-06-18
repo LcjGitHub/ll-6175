@@ -44,6 +44,8 @@ const partForm = ref({
   completion_date: null,
   channel_id: null,
   priority: '中',
+  note: '',
+  purchase_url: '',
 })
 
 const channels = ref([])
@@ -372,6 +374,8 @@ function openPartDialog(part = null) {
         completion_date: part.completion_date ? new Date(part.completion_date) : null,
         channel_id: part.channel_id,
         priority: part.priority || '中',
+        note: part.note || '',
+        purchase_url: part.purchase_url || '',
       }
     : {
         id: null,
@@ -381,6 +385,8 @@ function openPartDialog(part = null) {
         completion_date: null,
         channel_id: null,
         priority: '中',
+        note: '',
+        purchase_url: '',
       }
   partDialog.value = true
 }
@@ -394,6 +400,13 @@ function formatDate(date) {
   return `${y}-${m}-${d}`
 }
 
+/** 补全链接协议，缺少 http(s) 前缀时默认使用 https。 */
+function normalizeUrl(url) {
+  if (!url) return '#'
+  if (/^https?:\/\//i.test(url)) return url
+  return 'https://' + url
+}
+
 async function savePart() {
   if (!selectedGame.value) return
 
@@ -404,6 +417,8 @@ async function savePart() {
     completion_date: formatDate(partForm.value.completion_date),
     channel_id: partForm.value.channel_id,
     priority: partForm.value.priority || '中',
+    note: partForm.value.note.trim(),
+    purchase_url: partForm.value.purchase_url.trim(),
   }
 
   if (!payload.accessory || !payload.replacement_plan) {
@@ -817,6 +832,32 @@ watch(activeTab, (val) => {
                   <Tag v-else value="未完成" severity="warn" />
                 </template>
               </Column>
+              <Column field="note" header="备注说明">
+                <template #body="{ data }">
+                  <span
+                    v-if="data.note"
+                    class="cell-note"
+                    :title="data.note"
+                  >{{ data.note }}</span>
+                  <span v-else class="text-muted">—</span>
+                </template>
+              </Column>
+              <Column field="purchase_url" header="购买链接">
+                <template #body="{ data }">
+                  <a
+                    v-if="data.purchase_url"
+                    :href="normalizeUrl(data.purchase_url)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="purchase-link"
+                    :title="data.purchase_url"
+                  >
+                    <i class="pi pi-external-link" />
+                    <span class="purchase-link-text">链接</span>
+                  </a>
+                  <span v-else class="text-muted">—</span>
+                </template>
+              </Column>
               <Column header="操作" style="width: 8rem">
                 <template #body="{ data }">
                   <Button
@@ -998,7 +1039,7 @@ watch(activeTab, (val) => {
       v-model:visible="partDialog"
       :header="partForm.id ? '编辑缺件' : '新增缺件'"
       modal
-      :style="{ width: '28rem' }"
+      :style="{ width: '32rem' }"
     >
       <div class="form-stack">
         <div class="form-field">
@@ -1034,6 +1075,15 @@ watch(activeTab, (val) => {
           <InputText id="part-plan" v-model="partForm.replacement_plan" class="w-full" />
         </div>
         <div class="form-field">
+          <label for="part-url">购买链接</label>
+          <InputText
+            id="part-url"
+            v-model="partForm.purchase_url"
+            placeholder="可选，例如：https://item.taobao.com/..."
+            class="w-full"
+          />
+        </div>
+        <div class="form-field">
           <label for="part-cost">成本 (¥)</label>
           <InputNumber
             id="part-cost"
@@ -1053,6 +1103,17 @@ watch(activeTab, (val) => {
             show-icon
             show-button-bar
             placeholder="未完成可留空"
+            class="w-full"
+          />
+        </div>
+        <div class="form-field">
+          <label for="part-note">备注说明</label>
+          <Textarea
+            id="part-note"
+            v-model="partForm.note"
+            :rows="3"
+            :auto-resize="true"
+            placeholder="可选，记录色差、尺寸、来源等补充信息"
             class="w-full"
           />
         </div>
@@ -1373,6 +1434,36 @@ body {
 
 .parts-table {
   font-size: 0.9rem;
+}
+
+.parts-table :deep(.cell-note) {
+  display: inline-block;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  cursor: help;
+  color: #475569;
+  line-height: 1.4;
+}
+
+.parts-table :deep(.purchase-link) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #2563eb;
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.parts-table :deep(.purchase-link:hover) {
+  text-decoration: underline;
+}
+
+.parts-table :deep(.purchase-link .pi) {
+  font-size: 0.8rem;
 }
 
 /* 统计看板 */
