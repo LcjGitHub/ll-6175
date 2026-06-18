@@ -451,6 +451,20 @@ def create_part(game_id: int):
     return jsonify(row_to_dict(row)), 201
 
 
+_DATE_PATTERN_PART = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_date_str(date_str: str) -> bool:
+    """校验日期字符串格式是否为 YYYY-MM-DD 且是合法日期。"""
+    if not _DATE_PATTERN_PART.match(date_str):
+        return False
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
 @app.put("/api/parts/<int:part_id>")
 def update_part(part_id: int):
     """更新缺件记录。"""
@@ -470,6 +484,8 @@ def update_part(part_id: int):
         return jsonify({"error": "替换方案不能为空"}), 400
     if priority is not None and priority not in ("高", "中", "低"):
         return jsonify({"error": "优先级必须是高、中、低之一"}), 400
+    if completion_date is not None and not _validate_date_str(completion_date):
+        return jsonify({"error": "完成日期格式不合法，应为 YYYY-MM-DD"}), 400
 
     try:
         cost = float(cost)

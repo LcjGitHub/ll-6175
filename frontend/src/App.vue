@@ -519,6 +519,31 @@ function confirmDeletePart(part) {
   })
 }
 
+async function completePart(part) {
+  const today = new Date()
+  const dateStr = formatDate(today)
+  try {
+    await partApi.update(part.id, {
+      accessory: part.accessory,
+      replacement_plan: part.replacement_plan,
+      cost: part.cost ?? 0,
+      completion_date: dateStr,
+      channel_id: part.channel_id,
+      priority: part.priority || '中',
+      note: part.note || '',
+      purchase_url: part.purchase_url || '',
+    })
+    toast.add({ severity: 'success', summary: '成功', detail: `「${part.accessory}」已标记为完成`, life: 2000 })
+    await loadParts()
+    await loadGames()
+    await loadStats()
+    await loadGameSummary()
+    await loadLogs()
+  } catch (err) {
+    showError(err, '标记完成失败')
+  }
+}
+
 async function loadAll() {
   await Promise.all([loadGames(), loadStats(), loadChannels(), loadLogs()])
 }
@@ -968,8 +993,18 @@ watch(activeTab, (val) => {
                   <Tag v-else value="未完成" severity="warn" />
                 </template>
               </Column>
-              <Column header="操作" style="width: 8rem">
+              <Column header="操作" style="width: 12rem">
                 <template #body="{ data }">
+                  <Button
+                    v-if="!data.completion_date"
+                    icon="pi pi-check"
+                    text
+                    rounded
+                    severity="success"
+                    size="small"
+                    tooltip="一键完成"
+                    @click="completePart(data)"
+                  />
                   <Button
                     icon="pi pi-pencil"
                     text
