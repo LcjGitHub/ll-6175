@@ -5,6 +5,13 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent.parent / "data" / "boardgame.db"
 
+# 游戏名称到出版商和购入年份的映射
+_GAME_META = {
+    "卡坦岛": ("Kosmos", 2023),
+    "璀璨宝石": ("Space Cowboys", 2022),
+    "狼人杀": ("Asmodee", 2021),
+}
+
 
 def get_connection() -> sqlite3.Connection:
     """获取 SQLite 连接，行结果以 dict 形式返回。"""
@@ -13,6 +20,22 @@ def get_connection() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def _fill_game_publisher_and_year(conn: sqlite3.Connection) -> None:
+    """若游戏表已有数据但出版商和购入年份均为空，按名称补写。"""
+    rows = conn.execute(
+        "SELECT id, name FROM games WHERE publisher IS NULL AND purchase_year IS NULL"
+    ).fetchall()
+    for row in rows:
+        meta = _GAME_META.get(row["name"])
+        if meta:
+            publisher, purchase_year = meta
+            conn.execute(
+                "UPDATE games SET publisher = ?, purchase_year = ? WHERE id = ?",
+                (publisher, purchase_year, row["id"]),
+            )
+    conn.commit()
 
 
 def init_db() -> None:
@@ -60,6 +83,7 @@ def init_db() -> None:
 
         _migrate_missing_parts(conn)
         _migrate_games(conn)
+        _fill_game_publisher_and_year(conn)
 
         game_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
         if game_count == 0:

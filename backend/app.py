@@ -65,6 +65,8 @@ def create_game():
             purchase_year = int(purchase_year)
         except (TypeError, ValueError):
             return jsonify({"error": "购入年份必须是数字"}), 400
+        if purchase_year < 1900 or purchase_year > 2100:
+            return jsonify({"error": "购入年份必须在 1900 至 2100 之间"}), 400
     else:
         purchase_year = None
 
@@ -105,6 +107,8 @@ def update_game(game_id: int):
             purchase_year = int(purchase_year)
         except (TypeError, ValueError):
             return jsonify({"error": "购入年份必须是数字"}), 400
+        if purchase_year < 1900 or purchase_year > 2100:
+            return jsonify({"error": "购入年份必须在 1900 至 2100 之间"}), 400
     else:
         purchase_year = None
 

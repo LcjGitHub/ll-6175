@@ -956,9 +956,10 @@ watch(activeTab, (val) => {
       v-model:visible="gameDialog"
       :header="gameForm.id ? '编辑游戏' : '新增游戏'"
       modal
-      :style="{ width: '28rem' }"
+      :style="{ width: '30rem' }"
+      :dismissable-mask="true"
     >
-      <div class="form-stack">
+      <div class="game-form-container">
         <div class="form-field">
           <label for="game-name">游戏名称 *</label>
           <InputText id="game-name" v-model="gameForm.name" autofocus class="w-full" />
@@ -968,7 +969,7 @@ watch(activeTab, (val) => {
           <InputText
             id="game-publisher"
             v-model="gameForm.publisher"
-            placeholder="例如：Kosmos、Asmodee"
+            placeholder="例如：桌木鸟、游人码头、Asmodee 艾赐魔袋"
             class="w-full"
           />
         </div>
@@ -1348,6 +1349,14 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.game-form-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 260px;
+  padding: 0.5rem 0;
 }
 
 .form-field {
