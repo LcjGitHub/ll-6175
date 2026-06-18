@@ -647,6 +647,7 @@ def export_backup():
 
 
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_URL_PATTERN = re.compile(r"^https?://[^\s]+$")
 
 _FIELD_LABELS = {
     "game_id": "所属游戏编号",
@@ -739,6 +740,12 @@ def _validate_backup_structure(data: dict) -> list[str]:
                 errors.append(f"{pos}优先级必须是字符串")
             elif val not in ("高", "中", "低"):
                 errors.append(f"{pos}优先级取值不合法，必须是高、中、低之一")
+        if "purchase_url" in p and p["purchase_url"] is not None:
+            val = p["purchase_url"]
+            if not isinstance(val, str):
+                errors.append(f"{pos}购买链接必须是字符串")
+            elif val.strip() and not _URL_PATTERN.match(val.strip()):
+                errors.append(f"{pos}购买链接格式不合法，应以 http:// 或 https:// 开头")
 
     return errors
 

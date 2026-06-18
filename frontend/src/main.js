@@ -18,6 +18,7 @@ import Dropdown from 'primevue/dropdown'
 import TabView from 'primevue/tabview'
 import TabPanel from 'primevue/tabpanel'
 import Textarea from 'primevue/textarea'
+import Tooltip from 'primevue/tooltip'
 
 import 'primeicons/primeicons.css'
 
@@ -35,6 +36,8 @@ app.use(PrimeVue, {
 })
 app.use(ToastService)
 app.use(ConfirmationService)
+
+app.directive('tooltip', Tooltip)
 
 app.component('DataTable', DataTable)
 app.component('Column', Column)

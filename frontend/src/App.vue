@@ -817,6 +817,31 @@ watch(activeTab, (val) => {
                 </template>
               </Column>
               <Column field="replacement_plan" header="替换方案" />
+              <Column field="note" header="备注说明">
+                <template #body="{ data }">
+                  <span
+                    v-if="data.note"
+                    v-tooltip="data.note"
+                    class="cell-note"
+                  >{{ data.note }}</span>
+                  <span v-else class="text-muted">—</span>
+                </template>
+              </Column>
+              <Column field="purchase_url" header="购买链接">
+                <template #body="{ data }">
+                  <a
+                    v-if="data.purchase_url"
+                    v-tooltip="data.purchase_url"
+                    :href="normalizeUrl(data.purchase_url)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="purchase-link"
+                  >
+                    <span class="purchase-link-text">{{ data.purchase_url }}</span>
+                  </a>
+                  <span v-else class="text-muted">—</span>
+                </template>
+              </Column>
               <Column field="cost" header="成本 (¥)" sortable>
                 <template #body="{ data }">
                   {{ Number(data.cost).toFixed(2) }}
@@ -830,32 +855,6 @@ watch(activeTab, (val) => {
                     severity="success"
                   />
                   <Tag v-else value="未完成" severity="warn" />
-                </template>
-              </Column>
-              <Column field="note" header="备注说明">
-                <template #body="{ data }">
-                  <span
-                    v-if="data.note"
-                    class="cell-note"
-                    :title="data.note"
-                  >{{ data.note }}</span>
-                  <span v-else class="text-muted">—</span>
-                </template>
-              </Column>
-              <Column field="purchase_url" header="购买链接">
-                <template #body="{ data }">
-                  <a
-                    v-if="data.purchase_url"
-                    :href="normalizeUrl(data.purchase_url)"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="purchase-link"
-                    :title="data.purchase_url"
-                  >
-                    <i class="pi pi-external-link" />
-                    <span class="purchase-link-text">链接</span>
-                  </a>
-                  <span v-else class="text-muted">—</span>
                 </template>
               </Column>
               <Column header="操作" style="width: 8rem">
@@ -1058,19 +1057,6 @@ watch(activeTab, (val) => {
           />
         </div>
         <div class="form-field">
-          <label for="part-channel">采购渠道</label>
-          <Dropdown
-            id="part-channel"
-            v-model="partForm.channel_id"
-            :options="channels"
-            option-label="name"
-            option-value="id"
-            placeholder="请选择渠道（可选）"
-            show-clear
-            class="w-full"
-          />
-        </div>
-        <div class="form-field">
           <label for="part-plan">替换方案</label>
           <InputText id="part-plan" v-model="partForm.replacement_plan" class="w-full" />
         </div>
@@ -1080,6 +1066,30 @@ watch(activeTab, (val) => {
             id="part-url"
             v-model="partForm.purchase_url"
             placeholder="可选，例如：https://item.taobao.com/..."
+            class="w-full"
+          />
+        </div>
+        <div class="form-field">
+          <label for="part-note">备注说明</label>
+          <Textarea
+            id="part-note"
+            v-model="partForm.note"
+            :rows="3"
+            :auto-resize="true"
+            placeholder="可选，记录色差、尺寸、来源等补充信息"
+            class="w-full"
+          />
+        </div>
+        <div class="form-field">
+          <label for="part-channel">采购渠道</label>
+          <Dropdown
+            id="part-channel"
+            v-model="partForm.channel_id"
+            :options="channels"
+            option-label="name"
+            option-value="id"
+            placeholder="请选择渠道（可选）"
+            show-clear
             class="w-full"
           />
         </div>
@@ -1103,17 +1113,6 @@ watch(activeTab, (val) => {
             show-icon
             show-button-bar
             placeholder="未完成可留空"
-            class="w-full"
-          />
-        </div>
-        <div class="form-field">
-          <label for="part-note">备注说明</label>
-          <Textarea
-            id="part-note"
-            v-model="partForm.note"
-            :rows="3"
-            :auto-resize="true"
-            placeholder="可选，记录色差、尺寸、来源等补充信息"
             class="w-full"
           />
         </div>
@@ -1449,9 +1448,12 @@ body {
 }
 
 .parts-table :deep(.purchase-link) {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
+  display: inline-block;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
   color: #2563eb;
   text-decoration: none;
   font-size: 0.85rem;
@@ -1462,8 +1464,8 @@ body {
   text-decoration: underline;
 }
 
-.parts-table :deep(.purchase-link .pi) {
-  font-size: 0.8rem;
+.parts-table :deep(.purchase-link-text) {
+  vertical-align: middle;
 }
 
 /* 统计看板 */

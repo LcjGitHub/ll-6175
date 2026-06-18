@@ -12,6 +12,14 @@ _GAME_META = {
     "狼人杀": ("Asmodee", 2021),
 }
 
+# 配件名称到备注说明和购买链接的映射（与种子数据保持一致）
+_PART_NOTE_URL_MAP = {
+    "红色道路板块": ("原装红色道路板块，注意与现有版本色差", "https://item.taobao.com/item.htm?id=example1"),
+    "绿色宝石代币": ("玻璃材质，注意边缘打磨光滑", "https://mobile.yangkeduo.com/goods.html?goods_id=example2"),
+    "预言家角色牌": ("扫描分辨率需 300dpi 以上，双面彩印", None),
+    "法官锤": (None, "https://item.taobao.com/item.htm?id=example3"),
+}
+
 
 def get_connection() -> sqlite3.Connection:
     """获取 SQLite 连接，行结果以 dict 形式返回。"""
@@ -34,6 +42,30 @@ def _fill_game_publisher_and_year(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "UPDATE games SET publisher = ?, purchase_year = ? WHERE id = ?",
                 (publisher, purchase_year, row["id"]),
+            )
+    conn.commit()
+
+
+def _fill_missing_parts_note_and_url(conn: sqlite3.Connection) -> None:
+    """若缺件表已有数据但备注和购买链接均为空，按配件名称补写示例值。"""
+    total = conn.execute("SELECT COUNT(*) FROM missing_parts").fetchone()[0]
+    if total == 0:
+        return
+
+    filled = conn.execute(
+        "SELECT COUNT(*) FROM missing_parts WHERE note IS NOT NULL OR purchase_url IS NOT NULL"
+    ).fetchone()[0]
+    if filled > 0:
+        return
+
+    rows = conn.execute("SELECT id, accessory FROM missing_parts").fetchall()
+    for row in rows:
+        meta = _PART_NOTE_URL_MAP.get(row["accessory"])
+        if meta:
+            note, purchase_url = meta
+            conn.execute(
+                "UPDATE missing_parts SET note = ?, purchase_url = ? WHERE id = ?",
+                (note, purchase_url, row["id"]),
             )
     conn.commit()
 
@@ -86,6 +118,7 @@ def init_db() -> None:
         _migrate_missing_parts(conn)
         _migrate_games(conn)
         _fill_game_publisher_and_year(conn)
+        _fill_missing_parts_note_and_url(conn)
 
         game_count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
         if game_count == 0:
