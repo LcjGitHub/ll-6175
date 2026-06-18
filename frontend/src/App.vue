@@ -32,6 +32,9 @@ const loadingParts = ref(false)
 const stats = ref(null)
 const loadingStats = ref(false)
 
+const gameSummary = ref(null)
+const loadingGameSummary = ref(false)
+
 const gameDialog = ref(false)
 const gameForm = ref({ id: null, name: '', publisher: '', purchase_year: null })
 
@@ -150,6 +153,21 @@ async function loadStats() {
   }
 }
 
+async function loadGameSummary() {
+  if (!selectedGame.value) {
+    gameSummary.value = null
+    return
+  }
+  loadingGameSummary.value = true
+  try {
+    gameSummary.value = await statsApi.gameSummary(selectedGame.value.id)
+  } catch (err) {
+    showError(err, '加载游戏汇总失败')
+  } finally {
+    loadingGameSummary.value = false
+  }
+}
+
 function getBarWidth(cost) {
   if (!stats.value?.game_ranking?.length) return 0
   const maxCost = Math.max(...stats.value.game_ranking.map((g) => g.total_cost))
@@ -209,6 +227,7 @@ function selectGame(game) {
   statusFilter.value = ''
   keywordSearch.value = ''
   loadParts()
+  loadGameSummary()
 }
 
 function openGameDialog(game = null) {
@@ -263,6 +282,7 @@ function confirmDeleteGame(game) {
         if (selectedGame.value?.id === game.id) {
           selectedGame.value = null
           parts.value = []
+          gameSummary.value = null
         }
         toast.add({ severity: 'success', summary: '成功', detail: '游戏已删除', life: 2000 })
         await loadGames()
@@ -468,6 +488,7 @@ async function savePart() {
     await loadParts()
     await loadGames()
     await loadStats()
+    await loadGameSummary()
     await loadLogs()
   } catch (err) {
     showError(err)
@@ -487,6 +508,7 @@ function confirmDeletePart(part) {
         await loadParts()
         await loadGames()
         await loadStats()
+        await loadGameSummary()
         await loadLogs()
       } catch (err) {
         showError(err)
@@ -553,6 +575,7 @@ async function handleImport() {
       importDialog.value = false
       selectedGame.value = null
       parts.value = []
+      gameSummary.value = null
       await loadAll()
     } catch (err) {
       const detail = err?.response?.data?.details
@@ -846,8 +869,34 @@ watch(activeTab, (val) => {
               暂无匹配缺件
             </div>
 
-            <DataTable
-              v-else
+            <template v-else>
+              <div v-if="selectedGame && gameSummary" class="game-summary-bar">
+                <div class="summary-item">
+                  <i class="pi pi-list-check summary-icon" />
+                  <span class="summary-label">缺件总数</span>
+                  <span class="summary-value">{{ loadingGameSummary ? '—' : gameSummary.total_parts }}</span>
+                </div>
+                <div class="summary-divider" />
+                <div class="summary-item">
+                  <i class="pi pi-check-circle summary-icon completed" />
+                  <span class="summary-label">已完成</span>
+                  <span class="summary-value completed">{{ loadingGameSummary ? '—' : gameSummary.completed_parts }}</span>
+                </div>
+                <div class="summary-divider" />
+                <div class="summary-item">
+                  <i class="pi pi-clock summary-icon pending" />
+                  <span class="summary-label">未完成</span>
+                  <span class="summary-value pending">{{ loadingGameSummary ? '—' : gameSummary.pending_parts }}</span>
+                </div>
+                <div class="summary-divider" />
+                <div class="summary-item">
+                  <i class="pi pi-wallet summary-icon cost" />
+                  <span class="summary-label">总花费</span>
+                  <span class="summary-value cost">¥{{ loadingGameSummary ? '—' : Number(gameSummary.total_cost).toFixed(2) }}</span>
+                </div>
+              </div>
+
+              <DataTable
               :value="parts"
               :loading="loadingParts"
               striped-rows
@@ -936,6 +985,7 @@ watch(activeTab, (val) => {
                 </template>
               </Column>
             </DataTable>
+            </template>
           </main>
         </div>
       </TabPanel>
@@ -1379,6 +1429,71 @@ body {
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.game-summary-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, #f0f7ff 0%, #f5f0ff 100%);
+  border: 1px solid #e0e7ff;
+  border-radius: 10px;
+  flex-wrap: wrap;
+}
+
+.summary-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.summary-icon {
+  font-size: 1rem;
+  color: #3b82f6;
+}
+
+.summary-icon.completed {
+  color: #10b981;
+}
+
+.summary-icon.pending {
+  color: #f59e0b;
+}
+
+.summary-icon.cost {
+  color: #8b5cf6;
+}
+
+.summary-label {
+  font-size: 0.85rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.summary-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a2e;
+}
+
+.summary-value.completed {
+  color: #10b981;
+}
+
+.summary-value.pending {
+  color: #f59e0b;
+}
+
+.summary-value.cost {
+  color: #8b5cf6;
+}
+
+.summary-divider {
+  width: 1px;
+  height: 24px;
+  background: #cbd5e1;
 }
 
 .priority-filter-dropdown {

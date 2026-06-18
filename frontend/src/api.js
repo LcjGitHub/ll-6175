@@ -104,9 +104,20 @@ export const partApi = {
  * @property {GameRankItem[]} game_ranking
  */
 
+/**
+ * @typedef {Object} GameSummary
+ * @property {number} total_parts
+ * @property {number} completed_parts
+ * @property {number} pending_parts
+ * @property {number} total_cost
+ */
+
 export const statsApi = {
   /** @returns {Promise<StatsSummary>} */
   summary: () => api.get('/stats/summary').then((r) => r.data),
+
+  /** @param {number} gameId @returns {Promise<GameSummary>} */
+  gameSummary: (gameId) => api.get(`/games/${gameId}/summary`).then((r) => r.data),
 }
 
 /**

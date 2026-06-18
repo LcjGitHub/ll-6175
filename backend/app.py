@@ -305,6 +305,31 @@ def get_stats_summary():
     })
 
 
+@app.get("/api/games/<int:game_id>/summary")
+def get_game_summary(game_id: int):
+    """获取指定游戏的缺件汇总信息。"""
+    with get_connection() as conn:
+        game = conn.execute(
+            "SELECT id, name FROM games WHERE id = ?", (game_id,)
+        ).fetchone()
+        if not game:
+            return jsonify({"error": "游戏不存在"}), 404
+        row = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS total_parts,
+                SUM(CASE WHEN completion_date IS NOT NULL THEN 1 ELSE 0 END) AS completed_parts,
+                SUM(CASE WHEN completion_date IS NULL THEN 1 ELSE 0 END) AS pending_parts,
+                COALESCE(SUM(cost), 0) AS total_cost
+            FROM missing_parts
+            WHERE game_id = ?
+            """,
+            (game_id,),
+        ).fetchone()
+    summary = row_to_dict(row)
+    return jsonify(summary)
+
+
 # ── 缺件 ──────────────────────────────────────────────
 
 
