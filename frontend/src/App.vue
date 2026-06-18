@@ -72,11 +72,25 @@ const priorityOptions = [
 const statusFilter = ref('')
 const statusOptions = [
   { label: '全部状态', value: '' },
-  { label: '已完成', value: 'completed' },
+  { label: '已替换完成', value: 'completed' },
   { label: '未完成', value: 'pending' },
 ]
 
 const keywordSearch = ref('')
+let keywordDebounceTimer = null
+
+function onKeywordInput() {
+  clearTimeout(keywordDebounceTimer)
+  keywordDebounceTimer = setTimeout(() => {
+    loadParts()
+  }, 300)
+}
+
+function clearKeywordSearch() {
+  keywordSearch.value = ''
+  clearTimeout(keywordDebounceTimer)
+  loadParts()
+}
 const priorityEditOptions = [
   { label: '高', value: '高' },
   { label: '中', value: '中' },
@@ -779,12 +793,12 @@ watch(activeTab, (val) => {
               </h2>
               <div class="parts-header-actions">
                 <Dropdown
+                  v-if="selectedGame"
                   v-model="statusFilter"
                   :options="statusOptions"
                   option-label="label"
                   option-value="value"
                   placeholder="筛选状态"
-                  show-clear
                   class="status-filter-dropdown"
                   @change="loadParts"
                 />
@@ -798,13 +812,18 @@ watch(activeTab, (val) => {
                   class="priority-filter-dropdown"
                   @change="loadParts"
                 />
-                <span class="p-input-icon-left keyword-search-wrapper">
-                  <i class="pi pi-search" />
+                <span v-if="selectedGame" class="keyword-search-wrapper">
+                  <i class="pi pi-search keyword-search-icon" />
                   <InputText
                     v-model="keywordSearch"
                     placeholder="搜索配件名称"
                     class="keyword-search-input"
-                    @input="loadParts"
+                    @input="onKeywordInput"
+                  />
+                  <i
+                    v-if="keywordSearch"
+                    class="pi pi-times keyword-search-clear"
+                    @click="clearKeywordSearch"
                   />
                 </span>
                 <Button
@@ -820,6 +839,11 @@ watch(activeTab, (val) => {
             <div v-if="!selectedGame" class="empty-hint large">
               <i class="pi pi-arrow-left" />
               请从左侧选择一个桌游
+            </div>
+
+            <div v-else-if="!loadingParts && parts.length === 0 && (statusFilter || priorityFilter || keywordSearch)" class="empty-hint large">
+              <i class="pi pi-filter" />
+              暂无匹配缺件
             </div>
 
             <DataTable
@@ -1354,23 +1378,49 @@ body {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .priority-filter-dropdown {
-  min-width: 140px;
+  min-width: 150px;
 }
 
 .status-filter-dropdown {
-  min-width: 140px;
+  min-width: 150px;
 }
 
 .keyword-search-wrapper {
   display: inline-flex;
   align-items: center;
+  position: relative;
+}
+
+.keyword-search-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: #94a3b8;
+  font-size: 0.875rem;
+  pointer-events: none;
+  z-index: 1;
 }
 
 .keyword-search-input {
   min-width: 180px;
+  padding-left: 2.25rem;
+  padding-right: 2rem;
+}
+
+.keyword-search-clear {
+  position: absolute;
+  right: 0.5rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.keyword-search-clear:hover {
+  color: #64748b;
 }
 
 .game-list {
